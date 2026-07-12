@@ -1,0 +1,71 @@
+"""Runner entrypoint: dispatcher + monitor loops (+ dashboard, once wired).
+
+Single process, plain asyncio tasks. A queue/worker split would be cosplay at
+this scale; the seams (EventSource, clients) are where real infrastructure
+would slot in.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import signal
+
+from dotenv import load_dotenv
+
+from .config import Config
+from .devin_client import DevinClient
+from .dispatcher import Dispatcher
+from .github_client import GitHubClient
+from .log import configure_logging, get_logger
+from .monitor import Monitor
+from .sources import PollingSource
+from .store import Store
+
+log = get_logger(__name__)
+
+
+async def amain() -> None:
+    cfg = Config.from_env()
+    store = Store(cfg.db_path, cfg.events_path)
+    devin = DevinClient(cfg.devin_api_key, cfg.devin_org_id, cfg.devin_api_base)
+    github = GitHubClient(cfg.github_token, cfg.github_repo)
+    dispatcher = Dispatcher(
+        cfg, store, PollingSource(github, cfg.issue_label), github, devin
+    )
+    monitor = Monitor(cfg, store, github, devin)
+
+    log.info(
+        "runner_started",
+        repo=cfg.github_repo,
+        issue_label=cfg.issue_label,
+        max_concurrent=cfg.max_concurrent_sessions,
+        ci_checks=cfg.ci_checks_enabled,
+    )
+    tasks = [
+        asyncio.create_task(dispatcher.run_forever(), name="dispatcher"),
+        asyncio.create_task(monitor.run_forever(), name="monitor"),
+    ]
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
+    await stop.wait()
+
+    log.info("runner_stopping")
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    await devin.aclose()
+    await github.aclose()
+    store.close()
+
+
+def main() -> None:
+    load_dotenv()
+    configure_logging()
+    asyncio.run(amain())
+
+
+if __name__ == "__main__":
+    main()

@@ -78,5 +78,17 @@ class GitHubClient:
             if exc.status != 404:  # label already absent is fine
                 raise
 
+    async def pr_check_runs(self, pr_number: int) -> list[dict[str, Any]]:
+        """Check runs on a PR's head commit (empty if CI is disabled/absent)."""
+        pr = await request_json(
+            self._client, "GET", f"/repos/{self.repo}/pulls/{pr_number}"
+        )
+        result = await request_json(
+            self._client,
+            "GET",
+            f"/repos/{self.repo}/commits/{pr['head']['sha']}/check-runs",
+        )
+        return result.get("check_runs", [])
+
     async def aclose(self) -> None:
         await self._client.aclose()
