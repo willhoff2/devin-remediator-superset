@@ -31,15 +31,20 @@ class GitHubClient:
     async def get_repo(self) -> dict[str, Any]:
         return await request_json(self._client, "GET", f"/repos/{self.repo}")
 
-    async def list_open_issues(self, label: str) -> list[dict[str, Any]]:
+    async def list_issues(
+        self, label: str, state: str = "open"
+    ) -> list[dict[str, Any]]:
         items = await request_json(
             self._client,
             "GET",
             f"/repos/{self.repo}/issues",
-            params={"labels": label, "state": "open", "per_page": 100},
+            params={"labels": label, "state": state, "per_page": 100},
         )
         # The issues endpoint also returns PRs; keep real issues only.
         return [item for item in items if "pull_request" not in item]
+
+    async def list_open_issues(self, label: str) -> list[dict[str, Any]]:
+        return await self.list_issues(label, state="open")
 
     async def create_issue(
         self, title: str, body: str, labels: list[str]

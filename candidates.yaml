@@ -1,0 +1,44 @@
+# Remediation candidates, verified against willhoff2/superset @ 2a18a556b0
+# (2026-07-12): file exists, marker/pattern present, scope as described.
+# The scanner files these as GitHub issues (static mode). `--live-scan`
+# discovers describe-migration candidates by grepping a fresh clone instead.
+
+candidates:
+  - file: superset-frontend/src/dashboard/util/getLeafComponentIdFromPath.test.ts
+    category: describe-migration
+    title: "test(dashboard): migrate getLeafComponentIdFromPath.test.ts off describe() block"
+
+  - file: superset-frontend/src/utils/parseCookie.test.ts
+    category: describe-migration
+    title: "test(utils): migrate parseCookie.test.ts off describe() block"
+
+  - file: superset-frontend/src/SqlLab/utils/newQueryTabName.test.ts
+    category: describe-migration
+    title: "test(sqllab): migrate newQueryTabName.test.ts off describe() block"
+
+  - file: superset-frontend/src/dashboard/util/findParentId.test.ts
+    category: describe-migration
+    title: "test(dashboard): migrate findParentId.test.ts off describe() block"
+
+  - file: superset-frontend/src/features/home/types.ts
+    category: any-cleanup
+    title: "refactor(home): type file-extension config arrays as string[]"
+    change: |
+      Lines ~34-37 declare four file-extension config arrays as `Array<any>`:
+      `ALLOWED_EXTENSIONS`, `CSV_EXTENSIONS`, `COLUMNAR_EXTENSIONS`,
+      `EXCEL_EXTENSIONS`. They hold file extensions — type them `string[]`.
+      Confirm consumers of `ExtensionConfigs` still type-check.
+
+  - file: superset-frontend/src/explore/controlUtils/standardizedFormData.ts
+    category: any-cleanup
+    effort: medium
+    title: "refactor(explore): remove explicit any usages in standardizedFormData"
+    change: |
+      Lines ~225-292 contain nine explicit `any` usages (each suppressed with
+      `eslint-disable-next-line @typescript-eslint/no-explicit-any`), mostly
+      `as any` casts feeding `getControlsState`/`getFormDataFromControls`.
+      Replace them with proper types from `@superset-ui/core` /
+      `src/explore/types` and remove the now-unneeded disable comments.
+      If some casts are genuinely forced by upstream signatures, narrow what
+      you can and report the remainder honestly via structured output —
+      do NOT widen scope into other files to make types fit.
