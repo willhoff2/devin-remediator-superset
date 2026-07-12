@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 import signal
 
+import uvicorn
 from dotenv import load_dotenv
 
 from .config import Config
+from .dashboard import build_app
 from .devin_client import DevinClient
 from .dispatcher import Dispatcher
 from .github_client import GitHubClient
@@ -41,9 +43,18 @@ async def amain() -> None:
         max_concurrent=cfg.max_concurrent_sessions,
         ci_checks=cfg.ci_checks_enabled,
     )
+    server = uvicorn.Server(
+        uvicorn.Config(
+            build_app(store, cfg),
+            host="0.0.0.0",  # noqa: S104 — container-internal bind
+            port=cfg.dashboard_port,
+            log_level="warning",
+        )
+    )
     tasks = [
         asyncio.create_task(dispatcher.run_forever(), name="dispatcher"),
         asyncio.create_task(monitor.run_forever(), name="monitor"),
+        asyncio.create_task(server.serve(), name="dashboard"),
     ]
 
     stop = asyncio.Event()
@@ -53,7 +64,8 @@ async def amain() -> None:
     await stop.wait()
 
     log.info("runner_stopping")
-    for task in tasks:
+    server.should_exit = True
+    for task in tasks[:2]:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     await devin.aclose()

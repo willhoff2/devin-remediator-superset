@@ -32,6 +32,7 @@ def make_config(**overrides: Any) -> Config:
         "db_path": "unused",
         "events_path": "unused",
         "dashboard_port": 0,
+        "backlog_total": 208,
     }
     return Config(**{**defaults, **overrides})
 

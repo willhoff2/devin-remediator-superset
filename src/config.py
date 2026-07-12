@@ -39,6 +39,7 @@ class Config:
     db_path: str
     events_path: str
     dashboard_port: int
+    backlog_total: int
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -66,4 +67,7 @@ class Config:
             db_path=os.getenv("DB_PATH", "data/state.db"),
             events_path=os.getenv("EVENTS_PATH", "data/events.jsonl"),
             dashboard_port=_int("DASHBOARD_PORT", 8090),
+            # Known size of the describe-migration backlog in the target repo;
+            # drives the dashboard's throughput/progress bar.
+            backlog_total=_int("BACKLOG_TOTAL", 208),
         )
