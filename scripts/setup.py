@@ -79,17 +79,22 @@ async def cmd_validate(cfg: Config) -> int:
 
 
 async def cmd_playbook(cfg: Config) -> int:
-    instructions = Path("playbook.md").read_text()
+    """Upsert: playbook.md is the source of truth; re-running syncs it."""
+    body = Path("playbook.md").read_text()
+    title = "superset-issue-remediation"
     devin = DevinClient(cfg.devin_api_key, cfg.devin_org_id, cfg.devin_api_base)
     try:
-        result = await devin.create_playbook(
-            "superset-issue-remediation", instructions
-        )
+        if cfg.devin_playbook_id:
+            result = await devin.update_playbook(cfg.devin_playbook_id, title, body)
+            print(json.dumps(result, indent=2))
+            print(f"\nUpdated playbook {cfg.devin_playbook_id} in place")
+        else:
+            result = await devin.create_playbook(title, body)
+            print(json.dumps(result, indent=2))
+            playbook_id = result.get("playbook_id") or result.get("id")
+            print(f"\nSet DEVIN_PLAYBOOK_ID={playbook_id} in .env")
     finally:
         await devin.aclose()
-    print(json.dumps(result, indent=2))
-    playbook_id = result.get("playbook_id") or result.get("id")
-    print(f"\nSet DEVIN_PLAYBOOK_ID={playbook_id} in .env")
     return 0
 
 

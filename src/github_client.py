@@ -43,9 +43,6 @@ class GitHubClient:
         # The issues endpoint also returns PRs; keep real issues only.
         return [item for item in items if "pull_request" not in item]
 
-    async def list_open_issues(self, label: str) -> list[dict[str, Any]]:
-        return await self.list_issues(label, state="open")
-
     async def create_issue(
         self, title: str, body: str, labels: list[str]
     ) -> dict[str, Any]:

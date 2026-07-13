@@ -25,7 +25,7 @@ class PollingSource(EventSource):
         self._label = label
 
     async def fetch_candidates(self) -> list[dict[str, Any]]:
-        return await self._github.list_open_issues(self._label)
+        return await self._github.list_issues(self._label, state="open")
 
 
 class WebhookSource(EventSource):

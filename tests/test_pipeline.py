@@ -29,6 +29,7 @@ def make_config(**overrides: Any) -> Config:
         "max_acu_default": 5,
         "max_acu_medium": 8,
         "ci_checks_enabled": False,
+        "devin_review_enabled": False,
         "db_path": "unused",
         "events_path": "unused",
         "dashboard_port": 0,
@@ -62,6 +63,8 @@ class FakeDevin:
         self.created: list[dict[str, Any]] = []
         self.session_states: dict[str, dict[str, Any]] = {}
         self.messages: list[tuple[str, str]] = []
+        self.archived: list[str] = []
+        self.reviews: list[str] = []
 
     async def create_session(self, **kwargs: Any) -> dict[str, Any]:
         self.created.append(kwargs)
@@ -75,17 +78,28 @@ class FakeDevin:
     async def send_message(self, session_id: str, message: str) -> None:
         self.messages.append((session_id, message))
 
+    async def archive_session(self, session_id: str) -> None:
+        self.archived.append(session_id)
+
+    async def create_pr_review(self, pr_url: str) -> dict[str, Any]:
+        self.reviews.append(pr_url)
+        return {"review_id": f"rev-{len(self.reviews)}"}
+
 
 class FakeGitHub:
     def __init__(self) -> None:
         self.comments: list[tuple[int, str]] = []
         self.labels_added: list[tuple[int, list[str]]] = []
+        self.labels_removed: list[tuple[int, str]] = []
 
     async def comment(self, issue_number: int, body: str) -> None:
         self.comments.append((issue_number, body))
 
     async def add_labels(self, issue_number: int, labels: list[str]) -> None:
         self.labels_added.append((issue_number, labels))
+
+    async def remove_label(self, issue_number: int, label: str) -> None:
+        self.labels_removed.append((issue_number, label))
 
 
 @pytest.fixture
@@ -122,6 +136,7 @@ def test_dispatcher_dedupe_and_concurrency_gate(store: Store) -> None:
     # session creation params carried the guardrails
     assert devin.created[0]["max_acu_limit"] == 5
     assert "gh-issue-1" in devin.created[0]["tags"]
+    assert devin.created[0]["resumable"] is False
     assert github.comments[0][0] == 1
 
 
@@ -175,7 +190,32 @@ def test_monitor_success_path(store: Store) -> None:
     assert task["pr_url"].endswith("/pull/9")
     assert task["acus_consumed"] == 2.5
     assert github.labels_added == [(1, ["remediated-pending-merge"])]
+    assert github.labels_removed == [(1, "devin-remediate")]
     assert "pull/9" in github.comments[-1][1]
+    # lifecycle close-out: finished sessions idle forever unless archived
+    assert devin.archived == ["dv-1"]
+    assert devin.reviews == []  # DEVIN_REVIEW_ENABLED off by default
+
+
+def test_monitor_success_with_devin_review(store: Store) -> None:
+    cfg = make_config(devin_review_enabled=True)
+    devin, github = FakeDevin(), FakeGitHub()
+    monitor = Monitor(cfg, store, github, devin)  # type: ignore[arg-type]
+    store.create_task(1, "u", "t", "describe-migration", 5)
+    store.update_task(1, status=TaskStatus.DISPATCHED, session_id="dv-1", session_url="s")
+    devin.session_states["dv-1"] = {
+        "status": "running",
+        "status_detail": "finished",
+        "structured_output": {
+            "success": True,
+            "pr_url": "https://github.com/willhoff2/superset/pull/9",
+            "summary": "migrated",
+        },
+    }
+    asyncio.run(monitor.tick())
+    assert store.get_task(1)["status"] == TaskStatus.SUCCEEDED
+    assert devin.reviews == ["https://github.com/willhoff2/superset/pull/9"]
+    assert devin.archived == ["dv-1"]
 
 
 def test_monitor_failure_paths(store: Store) -> None:

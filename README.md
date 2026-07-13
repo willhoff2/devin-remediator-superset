@@ -89,7 +89,10 @@ dispatch (capped at 3 concurrent), PRs land, the backlog bar moves.
   log-pipeline-ready stdout.
 - **On GitHub**: every issue gets session-start and outcome comments;
   successes are relabeled `remediated-pending-merge` (the runner never closes
-  issues — `Fixes #n` in the PR body closes them on merge).
+  issues — `Fixes #n` in the PR body closes them on merge). Finished sessions
+  are archived (Devin sessions never exit on their own — see
+  `docs/devin-platform.md` in the parent workspace for the verified
+  lifecycle).
 
 ## Running tests
 
@@ -107,9 +110,10 @@ integration path is `scripts/setup.py` (`validate` / `smoke`).
 
 - **WebhookSource**: real-time dispatch from GitHub `issues` webhooks
   (HMAC-verified) instead of polling — the seam already exists.
-- **Independent review loop**: a second agent reviews Devin's PR and iterates
-  before human review (same pattern as automated-reviewer setups on other
-  codebases); kept out of v1 deliberately for ACU economics.
+- **Independent review loop**: Devin's native PR-review API
+  (`POST /v3/.../pr-reviews`) — already wired in behind
+  `DEVIN_REVIEW_ENABLED` (one call per successful PR); off by default for
+  ACU economics until per-review cost is measured.
 - **Devin Schedules** for periodic `--live-scan` sweeps; native Jira/Linear
   triggers where tickets originate outside GitHub.
 - **Enterprise consumption API** for org-level ACU/cost dashboards.

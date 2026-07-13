@@ -122,6 +122,10 @@ class Dispatcher:
                 tags=["auto-remediation", f"gh-issue-{number}", f"category:{category}"],
                 max_acu_limit=acu_cap,
                 structured_output_schema=REMEDIATION_SCHEMA,
+                # Fire-and-forget sessions: no VM-state preservation needed.
+                # If enabling CI_CHECKS_ENABLED, first verify send_message
+                # still wakes a non-resumable session.
+                resumable=False,
             )
         except Exception as exc:  # noqa: BLE001
             self._store.update_task(

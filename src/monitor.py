@@ -138,6 +138,8 @@ class Monitor:
                 ),
             )
             await self._github.add_labels(number, [self._cfg.done_label])
+            await self._github.remove_label(number, self._cfg.issue_label)
+            await self._wrap_up_session(task, pr_url)
         else:
             reason = (
                 output.get("blockers")
@@ -154,6 +156,29 @@ class Monitor:
                     session_url=task["session_url"], reason=reason
                 ),
             )
+
+    async def _wrap_up_session(self, task: dict[str, Any], pr_url: str) -> None:
+        """Post-success lifecycle: optional native Devin review of the PR,
+        then archive the session (finished sessions idle forever otherwise).
+        Best-effort — the task outcome is already recorded, so failures here
+        are logged, not propagated. Skipped when the CI retry path is on:
+        it needs the session responsive to follow-up messages."""
+        number = task["issue_number"]
+        if self._cfg.devin_review_enabled:
+            try:
+                review = await self._devin.create_pr_review(pr_url)
+                self._store.record_event(
+                    "devin_review_requested", number, pr_url=pr_url,
+                    review=review.get("review_id") or review.get("id"),
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.error("devin_review_failed", issue=number, error=str(exc))
+        if not self._cfg.ci_checks_enabled:
+            try:
+                await self._devin.archive_session(task["session_id"])
+                self._store.record_event("session_archived", number)
+            except Exception as exc:  # noqa: BLE001
+                log.error("session_archive_failed", issue=number, error=str(exc))
 
     async def _check_ci(self, task: dict[str, Any]) -> None:
         """Flag-gated: reconcile fork CI onto the task; retry once on red."""
