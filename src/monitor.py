@@ -5,8 +5,8 @@ REMEDIATION_SCHEMA at session level) plus PR existence — NOT fork CI, which
 is disabled by default on forks and too slow for this loop anyway.
 
 The flag-gated CI path (CI_CHECKS_ENABLED) polls the PR's check runs after a
-success and, on a red result, sends the session exactly one follow-up message
-to fix it. Capped at one retry: unbounded agent retries are an ACU leak.
+success and, on a red result, sends the session one follow-up message to fix
+it, capped at a single retry to bound ACU spend.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ class Monitor:
         while True:
             try:
                 await self.tick()
-            except Exception as exc:  # noqa: BLE001 — loop must survive transient API errors
+            except Exception as exc:  # noqa: BLE001, loop must survive transient API errors
                 log.error("monitor_tick_failed", error=str(exc))
             await asyncio.sleep(self._cfg.poll_interval_sessions)
 
@@ -81,11 +81,25 @@ class Monitor:
             TaskStatus.DISPATCHED, TaskStatus.SESSION_RUNNING, TaskStatus.RETRYING
         )
         for task in watched:
-            await self._check_session(task)
+            try:
+                await self._check_session(task)
+            except Exception as exc:  # noqa: BLE001, one bad session must not starve the rest
+                log.error(
+                    "session_check_failed",
+                    issue=task["issue_number"],
+                    error=str(exc),
+                )
         if self._cfg.ci_checks_enabled:
             for task in self._store.tasks_with_status(TaskStatus.SUCCEEDED):
                 if task["ci_status"] in (None, "pending"):
-                    await self._check_ci(task)
+                    try:
+                        await self._check_ci(task)
+                    except Exception as exc:  # noqa: BLE001
+                        log.error(
+                            "ci_check_failed",
+                            issue=task["issue_number"],
+                            error=str(exc),
+                        )
 
     async def _check_session(self, task: dict[str, Any]) -> None:
         number = task["issue_number"]
@@ -113,25 +127,36 @@ class Monitor:
         # No status=="exit" requirement: finished sessions idle at
         # running/waiting_for_user (see devin_client.session_reached_outcome).
         succeeded = output.get("success") is True and bool(pr_url)
+        if succeeded and self._cfg.pr_verify_enabled:
+            # Don't take the agent's word for it: the PR must exist in our
+            # repo and be open (or already merged).
+            succeeded = await self._pr_verified(pr_url)
+            if not succeeded:
+                output = {**output, "blockers": f"reported PR failed verification: {pr_url}"}
+        # Read ACUs from the fresh session state, not the task row fetched at
+        # tick start (0.0 is a legitimate value on unmetered orgs).
+        acus = state.get("acus_consumed")
         fields: dict[str, Any] = {
             "completed_at": time.time(),
             "summary": output.get("summary") or output.get("blockers"),
             "pr_url": pr_url,
         }
+        if acus is not None:
+            fields["acus_consumed"] = acus
         if succeeded:
             fields["status"] = TaskStatus.SUCCEEDED
             if self._cfg.ci_checks_enabled:
                 fields["ci_status"] = "pending"
             self._store.update_task(number, **fields)
             self._store.record_event(
-                "task_succeeded", number, pr_url=pr_url, acus=task["acus_consumed"]
+                "task_succeeded", number, pr_url=pr_url, acus=acus
             )
             await self._github.comment(
                 number,
                 SUCCESS_COMMENT.format(
                     pr_url=pr_url,
                     checks=", ".join(output.get("checks_run") or []) or "see PR body",
-                    acus=task["acus_consumed"] or "?",
+                    acus=acus if acus is not None else "?",
                     cap=task["acu_cap"],
                     summary=output.get("summary", ""),
                     number=number,
@@ -139,7 +164,7 @@ class Monitor:
             )
             await self._github.add_labels(number, [self._cfg.done_label])
             await self._github.remove_label(number, self._cfg.issue_label)
-            await self._wrap_up_session(task, pr_url)
+            await self._wrap_up_session(task, pr_url, succeeded=True)
         else:
             reason = (
                 output.get("blockers")
@@ -156,15 +181,29 @@ class Monitor:
                     session_url=task["session_url"], reason=reason
                 ),
             )
+            await self._wrap_up_session(task, pr_url, succeeded=False)
 
-    async def _wrap_up_session(self, task: dict[str, Any], pr_url: str) -> None:
-        """Post-success lifecycle: optional native Devin review of the PR,
-        then archive the session (finished sessions idle forever otherwise).
-        Best-effort — the task outcome is already recorded, so failures here
-        are logged, not propagated. Skipped when the CI retry path is on:
-        it needs the session responsive to follow-up messages."""
+    async def _pr_verified(self, pr_url: str) -> bool:
+        match = _PR_NUMBER_RE.search(pr_url)
+        if not match or f"github.com/{self._github.repo}/pull/" not in pr_url:
+            return False
+        try:
+            pr = await self._github.get_pr(int(match.group(1)))
+        except Exception:  # noqa: BLE001, missing PR and API error both fail closed
+            return False
+        return pr.get("state") == "open" or bool(pr.get("merged_at"))
+
+    async def _wrap_up_session(
+        self, task: dict[str, Any], pr_url: str | None, succeeded: bool
+    ) -> None:
+        """Terminal lifecycle: optional native Devin review of the PR (success
+        only), then archive the session, since finished sessions idle forever
+        otherwise. Best-effort: the task outcome is already recorded, so
+        failures here are logged, not propagated. Archiving is skipped when
+        the CI retry path is on, which needs the session responsive to
+        follow-up messages."""
         number = task["issue_number"]
-        if self._cfg.devin_review_enabled:
+        if succeeded and pr_url and self._cfg.devin_review_enabled:
             try:
                 review = await self._devin.create_pr_review(pr_url)
                 self._store.record_event(
@@ -174,11 +213,18 @@ class Monitor:
             except Exception as exc:  # noqa: BLE001
                 log.error("devin_review_failed", issue=number, error=str(exc))
         if not self._cfg.ci_checks_enabled:
-            try:
-                await self._devin.archive_session(task["session_id"])
-                self._store.record_event("session_archived", number)
-            except Exception as exc:  # noqa: BLE001
-                log.error("session_archive_failed", issue=number, error=str(exc))
+            await self._archive_session(task)
+
+    async def _archive_session(self, task: dict[str, Any]) -> None:
+        try:
+            await self._devin.archive_session(task["session_id"])
+            self._store.record_event("session_archived", task["issue_number"])
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "session_archive_failed",
+                issue=task["issue_number"],
+                error=str(exc),
+            )
 
     async def _check_ci(self, task: dict[str, Any]) -> None:
         """Flag-gated: reconcile fork CI onto the task; retry once on red."""
@@ -190,17 +236,26 @@ class Monitor:
         checks = await self._github.pr_check_runs(int(match.group(1)))
         if not checks:
             return  # nothing reported yet, stay pending
-        failed = [c["name"] for c in checks if c.get("conclusion") == "failure"]
+        # Anything completed-but-not-passing counts as failed (cancelled,
+        # timed_out, action_required, ...), not just conclusion=failure.
+        failed = [
+            c["name"]
+            for c in checks
+            if c.get("status") == "completed"
+            and c.get("conclusion") not in ("success", "neutral", "skipped")
+        ]
         pending = [c for c in checks if c.get("status") != "completed"]
         if pending and not failed:
             return
         if not failed:
             self._store.update_task(number, ci_status="green")
             self._store.record_event("ci_green", number)
+            await self._archive_session(task)
             return
         if task["retries"] >= 1:
             self._store.update_task(number, ci_status="red", status=TaskStatus.FAILED)
             self._store.record_event("ci_red_final", number, failed=failed)
+            await self._archive_session(task)
             return
         # NOTE: messaging an exited session relies on Devin resuming it; if
         # the API refuses, we mark the task failed rather than looping.
@@ -214,6 +269,7 @@ class Monitor:
         except Exception as exc:  # noqa: BLE001
             self._store.update_task(number, ci_status="red", status=TaskStatus.FAILED)
             self._store.record_event("ci_retry_undeliverable", number, error=str(exc))
+            await self._archive_session(task)
             return
         self._store.update_task(
             number, ci_status="red", status=TaskStatus.RETRYING, retries=1

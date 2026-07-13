@@ -1,9 +1,5 @@
-"""Runner entrypoint: dispatcher + monitor loops (+ dashboard, once wired).
-
-Single process, plain asyncio tasks. A queue/worker split would be cosplay at
-this scale; the seams (EventSource, clients) are where real infrastructure
-would slot in.
-"""
+"""Runner entrypoint: dispatcher, monitor, and dashboard as asyncio tasks
+in a single process."""
 
 from __future__ import annotations
 

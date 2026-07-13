@@ -1,8 +1,4 @@
-"""JSON Schemas (Draft 7) passed to Devin as structured_output_schema.
-
-Structured output is the primary success signal for the whole system — the
-monitor parses these instead of scraping session messages or waiting on CI.
-"""
+"""JSON Schemas (Draft 7) passed to Devin as structured_output_schema."""
 
 from __future__ import annotations
 

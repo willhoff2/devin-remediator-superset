@@ -34,14 +34,30 @@ class GitHubClient:
     async def list_issues(
         self, label: str, state: str = "open"
     ) -> list[dict[str, Any]]:
-        items = await request_json(
-            self._client,
-            "GET",
-            f"/repos/{self.repo}/issues",
-            params={"labels": label, "state": state, "per_page": 100},
+        issues: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            items = await request_json(
+                self._client,
+                "GET",
+                f"/repos/{self.repo}/issues",
+                params={
+                    "labels": label,
+                    "state": state,
+                    "per_page": 100,
+                    "page": page,
+                },
+            )
+            # The issues endpoint also returns PRs; keep real issues only.
+            issues.extend(item for item in items if "pull_request" not in item)
+            if len(items) < 100:
+                return issues
+            page += 1
+
+    async def get_pr(self, pr_number: int) -> dict[str, Any]:
+        return await request_json(
+            self._client, "GET", f"/repos/{self.repo}/pulls/{pr_number}"
         )
-        # The issues endpoint also returns PRs; keep real issues only.
-        return [item for item in items if "pull_request" not in item]
 
     async def create_issue(
         self, title: str, body: str, labels: list[str]

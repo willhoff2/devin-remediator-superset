@@ -37,6 +37,7 @@ class Config:
     max_acu_medium: int
     ci_checks_enabled: bool
     devin_review_enabled: bool
+    pr_verify_enabled: bool
     db_path: str
     events_path: str
     dashboard_port: int
@@ -66,6 +67,8 @@ class Config:
             max_acu_medium=_int("MAX_ACU_MEDIUM", 8),
             ci_checks_enabled=_bool("CI_CHECKS_ENABLED", False),
             devin_review_enabled=_bool("DEVIN_REVIEW_ENABLED", False),
+            # Off only for mock rehearsal, where reported PRs don't exist.
+            pr_verify_enabled=_bool("PR_VERIFY_ENABLED", True),
             db_path=os.getenv("DB_PATH", "data/state.db"),
             events_path=os.getenv("EVENTS_PATH", "data/events.jsonl"),
             dashboard_port=_int("DASHBOARD_PORT", 8090),

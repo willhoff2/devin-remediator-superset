@@ -1,8 +1,9 @@
-"""Turns labeled GitHub issues into Devin sessions, exactly once each.
+"""Turns labeled GitHub issues into Devin sessions, at most once each.
 
-Guardrails (all load-bearing for cost control, in dispatch order):
-- SQLite primary key on issue_number = idempotency (a task is created before
-  the session, so even a crash mid-dispatch cannot double-spend an issue),
+Cost-control guardrails, in dispatch order:
+- SQLite primary key on issue_number for idempotency (the task row is created
+  before the session, so a crash mid-dispatch can strand a row but never
+  double-spend an issue),
 - MAX_CONCURRENT_SESSIONS gate,
 - per-session max_acu_limit derived from the issue's effort label.
 """
@@ -30,7 +31,7 @@ Remediate GitHub issue #{number} in {repo}.
 Issue: {url}
 Title: {title}
 
-Follow the playbook exactly. The issue body is the authoritative scope: it
+{playbook_line}The issue body is the authoritative scope: it
 names the file(s), the required change, and the verification commands.
 Report the outcome via structured output.
 """
@@ -74,7 +75,7 @@ class Dispatcher:
         while True:
             try:
                 await self.tick()
-            except Exception as exc:  # noqa: BLE001 — loop must survive transient API errors
+            except Exception as exc:  # noqa: BLE001, loop must survive transient API errors
                 log.error("dispatcher_tick_failed", error=str(exc))
             await asyncio.sleep(self._cfg.poll_interval_issues)
 
@@ -93,7 +94,7 @@ class Dispatcher:
                 break
             if not await self._dispatch(issue):
                 # Definitive API rejection (4xx): every remaining dispatch
-                # this tick shares the payload shape — one failed call, not N.
+                # this tick shares the payload shape; one failed call, not N.
                 break
 
     async def _dispatch(self, issue: dict[str, Any]) -> bool:
@@ -110,7 +111,7 @@ class Dispatcher:
         if not self._store.create_task(
             number, issue["html_url"], title, category, acu_cap
         ):
-            return True  # lost a race, not a failure — keep dispatching
+            return True  # row left by an earlier crash-restart; keep dispatching
         self._store.record_event("issue_accepted", number, category=category)
         try:
             session = await self._devin.create_session(
@@ -119,6 +120,11 @@ class Dispatcher:
                     repo=self._cfg.github_repo,
                     url=issue["html_url"],
                     title=title,
+                    playbook_line=(
+                        "Follow the playbook exactly. "
+                        if self._cfg.devin_playbook_id
+                        else ""
+                    ),
                 ),
                 repos=[self._cfg.github_repo],
                 title=f"remediate #{number}: {title}"[:120],
@@ -128,7 +134,7 @@ class Dispatcher:
                 structured_output_schema=REMEDIATION_SCHEMA,
                 # resumable=False is documented but rejected by the real API
                 # (400 "Invalid additional_args key: skip_snapshot_on_sleep",
-                # verified 2026-07-13) — do not pass it.
+                # verified 2026-07-13); do not pass it.
             )
         except APIError as exc:
             if exc.status == 429 or exc.status >= 500:
@@ -141,7 +147,7 @@ class Dispatcher:
                 )
                 return True
             # Definitive rejection (payload/auth/quota): mark failed and
-            # halt the tick (see .tick()) — retrying an identical payload
+            # halt the tick (see .tick()); retrying an identical payload
             # only multiplies errors in the provider's logs.
             self._store.update_task(
                 number,
@@ -153,7 +159,7 @@ class Dispatcher:
                 "session_create_rejected", number, error=str(exc)
             )
             return False
-        except Exception as exc:  # noqa: BLE001 — timeout/connection error
+        except Exception as exc:  # noqa: BLE001, timeout/connection error
             # Ambiguous: the request may have reached Devin, so a session
             # MIGHT exist. Never auto-retry (double-spend risk); the task
             # stays failed for human triage on the dashboard.

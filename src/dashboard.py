@@ -1,9 +1,4 @@
-"""Leader-facing status page + JSON state API.
-
-Answers the engineering-leader question directly: what's in flight, what
-succeeded/failed, how long each fix took, and what it cost (ACUs actual vs
-cap), plus progress against the known migration backlog.
-"""
+"""Status page (HTML) + /api/state (JSON)."""
 
 from __future__ import annotations
 
@@ -16,11 +11,29 @@ from fastapi.responses import HTMLResponse
 from .config import Config
 from .store import ACTIVE_STATUSES, Store, TaskStatus
 
+# Cost display. Actual ACUs are used when the org meters them; otherwise we
+# estimate from session wall time. Per devin.ai/pricing: 1 ACU is ~15 min of
+# active work, $2.25/ACU pay-as-you-go (Core).
+ACU_MINUTES = 15
+ACU_RATE_USD = 2.25
+
 
 def _task_view(task: dict[str, Any]) -> dict[str, Any]:
     end = task["completed_at"] or time.time()
     duration = int(end - task["dispatched_at"]) if task["dispatched_at"] else None
-    return {**task, "duration_s": duration}
+    acus = task["acus_consumed"] or 0
+    if acus > 0:
+        cost, basis = acus * ACU_RATE_USD, "actual"
+    elif duration:
+        cost, basis = (duration / 60 / ACU_MINUTES) * ACU_RATE_USD, "estimated"
+    else:
+        cost, basis = None, None
+    return {
+        **task,
+        "duration_s": duration,
+        "cost_usd": round(cost, 2) if cost is not None else None,
+        "cost_basis": basis,
+    }
 
 
 def build_state(store: Store, cfg: Config) -> dict[str, Any]:
@@ -36,7 +49,15 @@ def build_state(store: Store, cfg: Config) -> dict[str, Any]:
             "total_acus": round(
                 sum(t["acus_consumed"] or 0 for t in tasks), 2
             ),
-            "backlog_done": len(succeeded),
+            "total_cost_usd": round(
+                sum(t["cost_usd"] or 0 for t in tasks), 2
+            ),
+            "cost_estimated": any(t["cost_basis"] == "estimated" for t in tasks),
+            # The 208-file backlog is describe-migration only; don't count
+            # any-cleanup successes against it.
+            "backlog_done": sum(
+                1 for t in succeeded if t["category"] == "describe-migration"
+            ),
             "backlog_total": cfg.backlog_total,
             "ci_checks_enabled": cfg.ci_checks_enabled,
         },
@@ -75,6 +96,7 @@ _PAGE = """\
   .failed {{ background: #b62324; color: #fff; }}
   .session_running, .dispatched, .retrying {{ background: #9e6a03; color: #fff; }}
   .issue_filed {{ background: #30363d; }}
+  .info {{ cursor: help; color: #8b949e; }}
   .bar {{ background: #21262d; border-radius: 6px; height: 10px; width: 260px;
           display: inline-block; vertical-align: middle; }}
   .bar i {{ display: block; height: 100%; border-radius: 6px; background: #1f6feb; }}
@@ -96,7 +118,8 @@ _PAGE = """\
     <thead><tr>
       <th>Issue</th><th class="title">Title</th><th>Category</th><th>Status</th>
       <th>Session</th><th>PR</th><th id="cihead" hidden>CI</th>
-      <th>Duration</th><th>ACUs (cap)</th>
+      <th>Duration</th><th>ACU cap</th>
+      <th>Cost <span class="info" title="Actual ACU billing when the org is metered ($2.25/ACU pay-as-you-go). This demo org is unmetered (API reports 0 ACUs), so ~ values are estimated from session wall time at 1 ACU per 15 min of work. Metered orgs get exact figures from the consumption API.">&#9432;</span></th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
@@ -104,29 +127,35 @@ _PAGE = """\
 </main>
 <script>
 const fmt = s => s == null ? "—" : (s < 90 ? s + "s" : Math.round(s/60) + "m");
+// Issue titles etc. come from GitHub and are attacker-influenceable.
+const esc = s => String(s).replace(/[&<>"']/g,
+  c => ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}}[c]));
 async function refresh() {{
   const state = await (await fetch("/api/state")).json();
   const s = state.summary;
   document.getElementById("cards").innerHTML = [
     ["Active", s.active], ["Succeeded", s.succeeded], ["Failed", s.failed],
-    ["Total ACUs", s.total_acus]
+    [s.cost_estimated ? "Est. cost" : "Cost",
+     (s.cost_estimated ? "~$" : "$") + s.total_cost_usd.toFixed(2)]
   ].map(([l, n]) => `<div class="card"><div class="n">${{n}}</div><div class="l">${{l}}</div></div>`).join("");
   document.getElementById("bar").style.width = (100 * s.backlog_done / s.backlog_total) + "%";
   document.getElementById("backlog").textContent = `${{s.backlog_done}} / ${{s.backlog_total}} remediated`;
   document.getElementById("cihead").hidden = !s.ci_checks_enabled;
   document.getElementById("rows").innerHTML = state.tasks.map(t => `<tr>
-    <td><a href="${{t.issue_url}}">#${{t.issue_number}}</a></td>
-    <td class="title">${{t.title}}</td><td>${{t.category}}</td>
-    <td><span class="badge ${{t.status}}">${{t.status}}</span></td>
-    <td>${{t.session_url ? `<a href="${{t.session_url}}">session</a>` : "—"}}</td>
-    <td>${{t.pr_url ? `<a href="${{t.pr_url}}">PR</a>` : "—"}}</td>
+    <td><a href="${{esc(t.issue_url)}}">#${{t.issue_number}}</a></td>
+    <td class="title">${{esc(t.title)}}</td><td>${{esc(t.category)}}</td>
+    <td><span class="badge ${{esc(t.status)}}">${{esc(t.status)}}</span></td>
+    <td>${{t.session_url ? `<a href="${{esc(t.session_url)}}">session</a>` : "—"}}</td>
+    <td>${{t.pr_url ? `<a href="${{esc(t.pr_url)}}">PR</a>` : "—"}}</td>
     ${{s.ci_checks_enabled ? `<td>${{t.ci_status ?? "—"}}</td>` : ""}}
     <td>${{fmt(t.duration_s)}}</td>
-    <td>${{t.acus_consumed ?? "—"}} (${{t.acu_cap}})</td>
+    <td>${{t.acu_cap}}</td>
+    <td>${{t.cost_usd == null ? "—" :
+        (t.cost_basis === "estimated" ? "~" : "") + "$" + t.cost_usd.toFixed(2)}}</td>
   </tr>`).join("");
   document.getElementById("events").innerHTML = state.events.map(e =>
-    `<div>${{new Date(e.ts * 1000).toLocaleTimeString()}} — ${{e.event}}` +
-    `${{e.issue_number ? " #" + e.issue_number : ""}}</div>`).join("");
+    `<div>${{new Date(e.ts * 1000).toLocaleTimeString()}} — ${{esc(e.event)}}` +
+    `${{e.issue_number ? " #" + esc(e.issue_number) : ""}}</div>`).join("");
   document.getElementById("updated").textContent =
     "updated " + new Date(state.generated_at * 1000).toLocaleTimeString();
 }}

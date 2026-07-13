@@ -1,8 +1,8 @@
 """Event sources feeding remediation candidates (GitHub issues) to the dispatcher.
 
-Polling is the default trigger: it's one of the brief's sanctioned event types,
-needs no public endpoint, and cannot miss events because listing is idempotent.
-WebhookSource marks the production seam for real-time triggering.
+Polling is the default trigger: no public endpoint needed, and it can't miss
+events because listing is idempotent. WebhookSource is where real-time
+triggering slots in.
 """
 
 from __future__ import annotations
@@ -33,9 +33,8 @@ class WebhookSource(EventSource):
     (HMAC-SHA256 signature-verified) and enqueueing their payloads, so
     dispatch latency is push-driven instead of poll-interval-bound.
 
-    Deliberately unimplemented in this demo — it requires a public endpoint
-    (tunnel or deployment), which adds a failure mode without changing the
-    architecture: the dispatcher consumes either source identically.
+    Not implemented here: it needs a public endpoint. The dispatcher
+    consumes either source identically.
     """
 
     async def fetch_candidates(self) -> list[dict[str, Any]]:

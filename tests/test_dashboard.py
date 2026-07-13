@@ -28,25 +28,35 @@ def seeded_store(tmp_path: Any) -> Store:
         completed_at=time.time() - 60,
     )
     store.create_task(2, "u2", "fix any types", "any-cleanup", 8)
-    store.update_task(2, status=TaskStatus.SESSION_RUNNING, dispatched_at=time.time())
+    store.update_task(
+        2, status=TaskStatus.SESSION_RUNNING, dispatched_at=time.time() - 30
+    )
     store.record_event("task_succeeded", 1, pr_url="https://github.com/x/pull/1")
     return store
 
 
 def test_build_state_summary(seeded_store: Store) -> None:
     state = build_state(seeded_store, make_config())
-    assert state["summary"] == {
+    summary = dict(state["summary"])
+    total_cost = summary.pop("total_cost_usd")
+    assert summary == {
         "active": 1,
         "succeeded": 1,
         "failed": 0,
         "total_acus": 2.5,
+        "cost_estimated": True,  # task 2 is running with no ACUs yet
         "backlog_done": 1,
         "backlog_total": 208,
         "ci_checks_enabled": False,
     }
+    assert total_cost == round(sum(t["cost_usd"] for t in state["tasks"]), 2)
     by_issue = {t["issue_number"]: t for t in state["tasks"]}
     assert by_issue[1]["duration_s"] == 240
     assert by_issue[2]["duration_s"] is not None  # running: duration accrues
+    # task 1 has metered ACUs: cost is actual; task 2 estimates from wall time
+    assert by_issue[1]["cost_basis"] == "actual"
+    assert by_issue[1]["cost_usd"] == round(2.5 * 2.25, 2)
+    assert by_issue[2]["cost_basis"] == "estimated"
     assert state["events"][0]["event"] == "task_succeeded"
 
 

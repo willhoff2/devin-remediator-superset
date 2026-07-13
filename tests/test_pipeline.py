@@ -31,6 +31,7 @@ def make_config(**overrides: Any) -> Config:
         "max_acu_medium": 8,
         "ci_checks_enabled": False,
         "devin_review_enabled": False,
+        "pr_verify_enabled": True,
         "db_path": "unused",
         "events_path": "unused",
         "dashboard_port": 0,
@@ -89,9 +90,17 @@ class FakeDevin:
 
 class FakeGitHub:
     def __init__(self) -> None:
+        self.repo = "willhoff2/superset"
         self.comments: list[tuple[int, str]] = []
         self.labels_added: list[tuple[int, list[str]]] = []
         self.labels_removed: list[tuple[int, str]] = []
+        # pr_number -> response dict; missing number raises like a 404
+        self.prs: dict[int, dict[str, Any]] = {}
+
+    async def get_pr(self, pr_number: int) -> dict[str, Any]:
+        if pr_number not in self.prs:
+            raise RuntimeError(f"404: no PR {pr_number}")
+        return self.prs[pr_number]
 
     async def comment(self, issue_number: int, body: str) -> None:
         self.comments.append((issue_number, body))
@@ -173,7 +182,8 @@ def _err(status: int) -> APIError:
 
 
 def test_dispatch_rejection_halts_tick(store: Store) -> None:
-    """4xx rejection: payload is systemically wrong — one call, not N."""
+    """A 4xx rejection means the payload is systemically wrong: the tick
+    stops after the first failed call."""
     cfg = make_config(max_concurrent_sessions=5)
     devin = ErringDevin(_err(400))
     dispatcher = Dispatcher(
@@ -222,6 +232,7 @@ def test_dispatch_ambiguous_fails_task_but_continues(store: Store) -> None:
 def test_monitor_success_path(store: Store) -> None:
     cfg = make_config()
     devin, github = FakeDevin(), FakeGitHub()
+    github.prs[9] = {"state": "open"}
     monitor = Monitor(cfg, store, github, devin)  # type: ignore[arg-type]
     store.create_task(1, "u", "t", "describe-migration", 5)
     store.update_task(1, status=TaskStatus.DISPATCHED, session_id="dv-1", session_url="s")
@@ -269,6 +280,7 @@ def test_monitor_success_path(store: Store) -> None:
 def test_monitor_success_with_devin_review(store: Store) -> None:
     cfg = make_config(devin_review_enabled=True)
     devin, github = FakeDevin(), FakeGitHub()
+    github.prs[9] = {"state": "open"}
     monitor = Monitor(cfg, store, github, devin)  # type: ignore[arg-type]
     store.create_task(1, "u", "t", "describe-migration", 5)
     store.update_task(1, status=TaskStatus.DISPATCHED, session_id="dv-1", session_url="s")
@@ -285,6 +297,51 @@ def test_monitor_success_with_devin_review(store: Store) -> None:
     assert store.get_task(1)["status"] == TaskStatus.SUCCEEDED
     assert devin.reviews == ["https://github.com/willhoff2/superset/pull/9"]
     assert devin.archived == ["dv-1"]
+
+
+def test_monitor_rejects_fabricated_pr(store: Store) -> None:
+    """success:true with a PR that doesn't exist on GitHub fails the task."""
+    cfg = make_config()
+    devin, github = FakeDevin(), FakeGitHub()  # github.prs is empty: every PR 404s
+    monitor = Monitor(cfg, store, github, devin)  # type: ignore[arg-type]
+    store.create_task(1, "u", "t", "c", 5)
+    store.update_task(1, status=TaskStatus.DISPATCHED, session_id="dv-1", session_url="s")
+    devin.session_states["dv-1"] = {
+        "status": "running",
+        "status_detail": "finished",
+        "structured_output": {
+            "success": True,
+            "pr_url": "https://github.com/willhoff2/superset/pull/9999",
+            "summary": "claims success",
+        },
+    }
+    asyncio.run(monitor.tick())
+    task = store.get_task(1)
+    assert task["status"] == TaskStatus.FAILED
+    assert "failed verification" in github.comments[0][1]
+
+
+def test_monitor_one_bad_session_does_not_starve_others(store: Store) -> None:
+    cfg = make_config()
+    devin, github = FakeDevin(), FakeGitHub()
+    github.prs[9] = {"state": "open"}
+    monitor = Monitor(cfg, store, github, devin)  # type: ignore[arg-type]
+    # task 1's session lookup blows up; task 2 finishes normally
+    store.create_task(1, "u", "t", "c", 5)
+    store.update_task(1, status=TaskStatus.DISPATCHED, session_id="dv-gone", session_url="s")
+    store.create_task(2, "u", "t", "c", 5)
+    store.update_task(2, status=TaskStatus.DISPATCHED, session_id="dv-2", session_url="s")
+    devin.session_states["dv-2"] = {
+        "status": "running",
+        "status_detail": "finished",
+        "structured_output": {
+            "success": True,
+            "pr_url": "https://github.com/willhoff2/superset/pull/9",
+            "summary": "done",
+        },
+    }
+    asyncio.run(monitor.tick())
+    assert store.get_task(2)["status"] == TaskStatus.SUCCEEDED
 
 
 def test_monitor_failure_paths(store: Store) -> None:

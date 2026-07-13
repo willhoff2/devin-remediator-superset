@@ -2,8 +2,8 @@
 
 The tasks table is the idempotency backbone: issue_number is the primary key,
 so an issue can never be dispatched twice no matter how often the poller sees
-it. Synchronous sqlite3 called from async loops is deliberate — calls are
-sub-millisecond at this scale and keep the code readable.
+it. Synchronous sqlite3 from async loops: calls are sub-millisecond at this
+scale.
 """
 
 from __future__ import annotations
@@ -135,8 +135,8 @@ class Store:
 
     def delete_task(self, issue_number: int) -> None:
         """Free a task row so the issue can be re-dispatched. Only safe when
-        it is CERTAIN no session exists (a non-2xx status proves it); see the
-        dispatcher's error handling for the classification."""
+        no session can exist for it (a non-2xx status from create proves
+        that); see the dispatcher's error handling."""
         with self._lock:
             self._conn.execute(
                 "DELETE FROM tasks WHERE issue_number = ?", (issue_number,)
