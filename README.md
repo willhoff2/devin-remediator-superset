@@ -94,6 +94,30 @@ dispatch (capped at 3 concurrent), PRs land, the backlog bar moves.
   `docs/devin-platform.md` in the parent workspace for the verified
   lifecycle).
 
+## Re-running the demo from scratch
+
+Rehearsal runs accumulate state; `scripts/reset_demo.py` returns everything
+to a fresh start:
+
+```bash
+python -m scripts.reset_demo        # dry run: prints the full plan
+python -m scripts.reset_demo --yes  # close Devin PRs, delete devin/* branches,
+                                    # DELETE remediation issues, wipe data/
+```
+
+Issues are deleted, not closed, because the scanner dedupes by file path
+across issues in **all** states — a closed rehearsal issue would block
+re-filing forever. (Verified working with the runner's own fine-grained PAT
+when its owner is the repo admin. Fallback if deletion ever fails: bump
+`ISSUE_LABEL`/`DONE_LABEL` to fresh names, e.g. `devin-remediate-v2` — old
+issues become invisible to scanner and dispatcher without touching them.)
+
+The script never force-pushes: if a rehearsal PR was merged, it reports that
+master moved off the frozen SHA and prints the reset command for you to run
+deliberately. Simplest policy: **don't merge PRs during rehearsals** — then
+master never moves and candidates stay valid. Devin sessions need no reset
+(the monitor archives them; spent ACUs are spent either way).
+
 ## Running tests
 
 ```bash
