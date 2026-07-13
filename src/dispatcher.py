@@ -16,6 +16,7 @@ from typing import Any
 from .config import Config
 from .devin_client import DevinClient
 from .github_client import GitHubClient
+from .http_util import APIError
 from .log import get_logger
 from .schemas import REMEDIATION_SCHEMA
 from .sources import EventSource
@@ -90,9 +91,12 @@ class Dispatcher:
                     waiting_issue=number,
                 )
                 break
-            await self._dispatch(issue)
+            if not await self._dispatch(issue):
+                # Definitive API rejection (4xx): every remaining dispatch
+                # this tick shares the payload shape — one failed call, not N.
+                break
 
-    async def _dispatch(self, issue: dict[str, Any]) -> None:
+    async def _dispatch(self, issue: dict[str, Any]) -> bool:
         number = issue["number"]
         title = issue["title"]
         category, effort = _issue_meta(issue)
@@ -106,7 +110,7 @@ class Dispatcher:
         if not self._store.create_task(
             number, issue["html_url"], title, category, acu_cap
         ):
-            return
+            return True  # lost a race, not a failure — keep dispatching
         self._store.record_event("issue_accepted", number, category=category)
         try:
             session = await self._devin.create_session(
@@ -126,7 +130,33 @@ class Dispatcher:
                 # (400 "Invalid additional_args key: skip_snapshot_on_sleep",
                 # verified 2026-07-13) — do not pass it.
             )
-        except Exception as exc:  # noqa: BLE001
+        except APIError as exc:
+            if exc.status == 429 or exc.status >= 500:
+                # Transient, and a non-2xx status proves no session was
+                # created: free the row so the next tick retries; other
+                # issues may still dispatch fine.
+                self._store.delete_task(number)
+                self._store.record_event(
+                    "session_create_transient", number, error=str(exc)
+                )
+                return True
+            # Definitive rejection (payload/auth/quota): mark failed and
+            # halt the tick (see .tick()) — retrying an identical payload
+            # only multiplies errors in the provider's logs.
+            self._store.update_task(
+                number,
+                status=TaskStatus.FAILED,
+                summary=f"session creation rejected: {exc}",
+                completed_at=time.time(),
+            )
+            self._store.record_event(
+                "session_create_rejected", number, error=str(exc)
+            )
+            return False
+        except Exception as exc:  # noqa: BLE001 — timeout/connection error
+            # Ambiguous: the request may have reached Devin, so a session
+            # MIGHT exist. Never auto-retry (double-spend risk); the task
+            # stays failed for human triage on the dashboard.
             self._store.update_task(
                 number,
                 status=TaskStatus.FAILED,
@@ -134,7 +164,7 @@ class Dispatcher:
                 completed_at=time.time(),
             )
             self._store.record_event("session_create_failed", number, error=str(exc))
-            return
+            return True
         session_url = session.get("url") or session.get("session_url")
         self._store.update_task(
             number,
@@ -153,3 +183,4 @@ class Dispatcher:
             number,
             DISPATCH_COMMENT.format(session_url=session_url, acu_cap=acu_cap),
         )
+        return True

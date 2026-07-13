@@ -133,6 +133,16 @@ class Store:
             )
             self._conn.commit()
 
+    def delete_task(self, issue_number: int) -> None:
+        """Free a task row so the issue can be re-dispatched. Only safe when
+        it is CERTAIN no session exists (a non-2xx status proves it); see the
+        dispatcher's error handling for the classification."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM tasks WHERE issue_number = ?", (issue_number,)
+            )
+            self._conn.commit()
+
     def get_task(self, issue_number: int) -> dict[str, Any] | None:
         row = self._conn.execute(
             "SELECT * FROM tasks WHERE issue_number = ?", (issue_number,)

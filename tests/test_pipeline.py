@@ -9,6 +9,7 @@ import pytest
 
 from src.config import Config
 from src.dispatcher import Dispatcher
+from src.http_util import APIError
 from src.monitor import Monitor
 from src.store import Store, TaskStatus
 
@@ -149,6 +150,73 @@ def test_dispatcher_effort_label_raises_acu_cap(store: Store) -> None:
     )
     asyncio.run(dispatcher.tick())
     assert devin.created[0]["max_acu_limit"] == 8
+
+
+class ErringDevin(FakeDevin):
+    """Raises the given exception for the first N create_session calls."""
+
+    def __init__(self, exc: Exception, fail_first_n: int = 10**9) -> None:
+        super().__init__()
+        self._exc = exc
+        self._fail_first_n = fail_first_n
+        self.attempts = 0
+
+    async def create_session(self, **kwargs: Any) -> dict[str, Any]:
+        self.attempts += 1
+        if self.attempts <= self._fail_first_n:
+            raise self._exc
+        return await super().create_session(**kwargs)
+
+
+def _err(status: int) -> APIError:
+    return APIError("POST", "/sessions", status, "boom")
+
+
+def test_dispatch_rejection_halts_tick(store: Store) -> None:
+    """4xx rejection: payload is systemically wrong — one call, not N."""
+    cfg = make_config(max_concurrent_sessions=5)
+    devin = ErringDevin(_err(400))
+    dispatcher = Dispatcher(
+        cfg, store, FakeSource([make_issue(1), make_issue(2)]), FakeGitHub(), devin  # type: ignore[arg-type]
+    )
+    asyncio.run(dispatcher.tick())
+    assert devin.attempts == 1
+    assert store.get_task(1)["status"] == TaskStatus.FAILED
+    assert store.get_task(2) is None  # never attempted this tick
+
+
+def test_dispatch_transient_frees_row_and_continues(store: Store) -> None:
+    """5xx/429: no session exists — row freed for retry, others continue."""
+    cfg = make_config(max_concurrent_sessions=5)
+    devin = ErringDevin(_err(503), fail_first_n=1)
+    dispatcher = Dispatcher(
+        cfg, store, FakeSource([make_issue(1), make_issue(2)]), FakeGitHub(), devin  # type: ignore[arg-type]
+    )
+    asyncio.run(dispatcher.tick())
+    # issue 1 failed transiently: row freed; issue 2 dispatched same tick
+    assert store.get_task(1) is None
+    assert store.get_task(2)["status"] == TaskStatus.DISPATCHED
+
+    asyncio.run(dispatcher.tick())
+    # next tick retries issue 1 successfully
+    assert store.get_task(1)["status"] == TaskStatus.DISPATCHED
+
+
+def test_dispatch_ambiguous_fails_task_but_continues(store: Store) -> None:
+    """Timeout: a session MIGHT exist — never auto-retry, others continue."""
+    cfg = make_config(max_concurrent_sessions=5)
+    devin = ErringDevin(RuntimeError("connect timeout"), fail_first_n=1)
+    dispatcher = Dispatcher(
+        cfg, store, FakeSource([make_issue(1), make_issue(2)]), FakeGitHub(), devin  # type: ignore[arg-type]
+    )
+    asyncio.run(dispatcher.tick())
+    assert store.get_task(1)["status"] == TaskStatus.FAILED
+    assert store.get_task(2)["status"] == TaskStatus.DISPATCHED
+
+    asyncio.run(dispatcher.tick())
+    # failed task is terminal: no re-dispatch, no further attempts for it
+    assert store.get_task(1)["status"] == TaskStatus.FAILED
+    assert devin.attempts == 2  # one failure + one success, nothing more
 
 
 def test_monitor_success_path(store: Store) -> None:

@@ -126,9 +126,22 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 The suite covers the store's idempotency, dispatcher dedupe/concurrency/ACU
-guardrails, monitor success/failure finalization, dashboard state assembly,
-and scanner filing dedupe — all against fake API clients. The real-API
-integration path is `scripts/setup.py` (`validate` / `smoke`).
+guardrails and create-failure classification (reject/transient/ambiguous),
+monitor success/failure finalization, dashboard state assembly, and scanner
+filing dedupe — all against fake API clients. The real-API integration path
+is `scripts/setup.py` (`validate` / `smoke`).
+
+To rehearse the **full flow with zero Devin API traffic**, run against the
+local mock (`scripts/mock_devin.py`), which enforces the verified
+create-session payload contract (unknown keys 400 exactly like production —
+the OpenAPI spec over-promises) and mimics the verified session lifecycle
+(`running/working` → `running/finished`, never `exit`):
+
+```bash
+.venv/bin/uvicorn scripts.mock_devin:app --port 9095 &
+DEVIN_API_BASE=http://127.0.0.1:9095 POLL_INTERVAL_ISSUES=3 \
+  POLL_INTERVAL_SESSIONS=1 python -m src.main
+```
 
 ## Production hardening (next steps)
 
