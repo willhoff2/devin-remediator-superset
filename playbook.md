@@ -19,15 +19,25 @@ own tooling, delivered as a small reviewable PR.
    file.
 4. Run the verification commands listed in the issue. At minimum:
    - the affected jest test file(s): `npm run test -- <file>` from
-     `superset-frontend/`
-   - `pre-commit run --files <each touched file>` from the repository root
+     `superset-frontend/` (run `npm ci` there first if `node_modules` is
+     missing — it takes well under a minute)
+   - `pre-commit run --files <each touched file>` from the repository root.
+     `pre-commit` is not preinstalled in the machine environment: install it
+     with `pip install pre-commit` first. If installing it or building its
+     hook environments takes more than ~5 minutes, skip it and instead run
+     the equivalent fast checks directly from `superset-frontend/`:
+     `npx prettier --check <files>` and `npx oxlint <files>`, then record
+     the substitution in structured output `notes`.
 5. Fix any failures and re-run until everything passes.
 6. Open a pull request against the default branch of the same repository
    (not upstream apache/superset). The PR title must follow Conventional
    Commits, e.g. `test(dashboard): migrate X test off describe() block` or
    `refactor(home): ...`. The PR body must contain `Fixes #<issue-number>`
    and a checklist of the verification commands you ran with their results.
-7. Report the outcome via structured output.
+7. Report the outcome via structured output. Do not ask the user questions
+   or wait for confirmation at any point — every decision you need is in the
+   issue and this playbook, and nobody is watching the session. When the
+   structured output is emitted, you are done.
 
 ## Specifications
 

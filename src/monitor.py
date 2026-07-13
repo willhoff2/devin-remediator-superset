@@ -17,9 +17,10 @@ import time
 from typing import Any
 
 from .config import Config
-from .devin_client import TERMINAL_STATUSES, DevinClient
+from .devin_client import DevinClient, session_reached_outcome
 from .github_client import GitHubClient
 from .log import get_logger
+from .schemas import REMEDIATION_SCHEMA
 from .store import Store, TaskStatus
 
 log = get_logger(__name__)
@@ -93,14 +94,14 @@ class Monitor:
         acus = state.get("acus_consumed")
         if acus is not None:
             self._store.update_task(number, acus_consumed=acus)
-        if (
+        if session_reached_outcome(state, REMEDIATION_SCHEMA["required"]):
+            await self._finalize(task, state)
+        elif (
             status in ("claimed", "running")
             and task["status"] == TaskStatus.DISPATCHED
         ):
             self._store.update_task(number, status=TaskStatus.SESSION_RUNNING)
             self._store.record_event("session_running", number, session_status=status)
-        elif status in TERMINAL_STATUSES:
-            await self._finalize(task, state)
 
     async def _finalize(self, task: dict[str, Any], state: dict[str, Any]) -> None:
         number = task["issue_number"]
@@ -109,11 +110,9 @@ class Monitor:
         pr_url = output.get("pr_url") or (
             session_prs[0].get("pr_url") if session_prs else None
         )
-        succeeded = (
-            state.get("status") == "exit"
-            and output.get("success") is True
-            and bool(pr_url)
-        )
+        # No status=="exit" requirement: finished sessions idle at
+        # running/waiting_for_user (see devin_client.session_reached_outcome).
+        succeeded = output.get("success") is True and bool(pr_url)
         fields: dict[str, Any] = {
             "completed_at": time.time(),
             "summary": output.get("summary") or output.get("blockers"),

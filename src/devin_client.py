@@ -15,6 +15,29 @@ from .http_util import request_json
 # Terminal values of the v3 session `status` field.
 TERMINAL_STATUSES = frozenset({"exit", "error", "suspended"})
 
+# status_detail values where Devin has stopped working and is idling.
+IDLE_DETAILS = frozenset({"waiting_for_user", "sleeping"})
+
+
+def session_reached_outcome(
+    state: dict[str, Any], required_fields: list[str]
+) -> bool:
+    """Whether a session has delivered everything it's going to.
+
+    Verified against the real API (2026-07-12): a session that finishes its
+    task does NOT transition to `exit` — it idles at status=running,
+    status_detail=waiting_for_user, even if asked to end. So "done" means a
+    hard-terminal status, or idling with every required structured-output
+    field present. Idling WITHOUT complete output means Devin is blocked on
+    a question — not an outcome.
+    """
+    if state.get("status") in TERMINAL_STATUSES:
+        return True
+    if state.get("status_detail") in IDLE_DETAILS:
+        output = state.get("structured_output") or {}
+        return all(output.get(field) is not None for field in required_fields)
+    return False
+
 
 class DevinClient:
     def __init__(
@@ -74,12 +97,12 @@ class DevinClient:
             params["tags"] = ",".join(tags)
         return await request_json(self._client, "GET", "/sessions", params=params)
 
-    async def create_playbook(self, name: str, instructions: str) -> dict[str, Any]:
+    async def create_playbook(self, title: str, body: str) -> dict[str, Any]:
         return await request_json(
             self._client,
             "POST",
             "/playbooks",
-            json={"name": name, "instructions": instructions},
+            json={"title": title, "body": body},
         )
 
     async def aclose(self) -> None:

@@ -23,7 +23,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.config import Config
-from src.devin_client import TERMINAL_STATUSES, DevinClient
+from src.devin_client import DevinClient, session_reached_outcome
 from src.github_client import GitHubClient
 from src.log import configure_logging, get_logger
 from src.schemas import SMOKE_SCHEMA
@@ -118,7 +118,7 @@ async def cmd_smoke(cfg: Config) -> int:
                 elapsed = int(time.time() - started)
                 print(f"[{elapsed:>4}s] status={status} detail={detail}")
                 last_status = (status, detail)
-            if status in TERMINAL_STATUSES:
+            if session_reached_outcome(state, SMOKE_SCHEMA["required"]):
                 break
 
         print("\n--- structured_output ---")
@@ -127,10 +127,7 @@ async def cmd_smoke(cfg: Config) -> int:
         print(f"wall time: {int(time.time() - started)}s")
 
         output = state.get("structured_output") or {}
-        gate = (
-            state.get("status") == "exit"
-            and output.get("jest_passed") is True
-        )
+        gate = output.get("jest_passed") is True
         print(f"\nGATE {'PASSED' if gate else 'FAILED'} — see docs/spec.md prereqs")
         return 0 if gate else 1
     finally:

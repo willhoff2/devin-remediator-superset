@@ -141,13 +141,25 @@ def test_monitor_success_path(store: Store) -> None:
     monitor = Monitor(cfg, store, github, devin)  # type: ignore[arg-type]
     store.create_task(1, "u", "t", "describe-migration", 5)
     store.update_task(1, status=TaskStatus.DISPATCHED, session_id="dv-1", session_url="s")
-    devin.session_states["dv-1"] = {"status": "running"}
+    devin.session_states["dv-1"] = {"status": "running", "status_detail": "working"}
 
     asyncio.run(monitor.tick())
     assert store.get_task(1)["status"] == TaskStatus.SESSION_RUNNING
 
+    # Devin blocked on a question (idle, incomplete output) is NOT an outcome
     devin.session_states["dv-1"] = {
-        "status": "exit",
+        "status": "running",
+        "status_detail": "waiting_for_user",
+        "structured_output": None,
+    }
+    asyncio.run(monitor.tick())
+    assert store.get_task(1)["status"] == TaskStatus.SESSION_RUNNING
+
+    # verified real-API terminal shape: finished sessions never reach
+    # status=exit — they idle at running/waiting_for_user with output complete
+    devin.session_states["dv-1"] = {
+        "status": "running",
+        "status_detail": "waiting_for_user",
         "acus_consumed": 2.5,
         "structured_output": {
             "success": True,
