@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E4", "E7", "E9", "F",  # pycodestyle/pyflakes defaults
+    "I",                    # import sorting
+    "B",                    # bugbear
+    "BLE",                  # no blind except (noqa'd where loops must survive)
+    "S",                    # bandit (S608 noqa'd where columns are whitelisted)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # asserts are the point
+"src/scanner.py" = ["S603", "S607"]  # fixed-arg git subprocess calls
