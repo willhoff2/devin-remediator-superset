@@ -146,6 +146,9 @@ def test_dispatcher_dedupe_and_concurrency_gate(store: Store) -> None:
     # session creation params carried the guardrails
     assert devin.created[0]["max_acu_limit"] == 5
     assert "gh-issue-1" in devin.created[0]["tags"]
+    # the dispatch log line carries the clickable session URL
+    dispatched = [e for e in store.recent_events() if e["event"] == "session_dispatched"]
+    assert dispatched[0]["session_url"].startswith("https://app.devin.ai/")
     # resumable must NOT be passed: real API 400s on it (see dispatcher)
     assert "resumable" not in devin.created[0]
     assert github.comments[0][0] == 1

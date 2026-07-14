@@ -183,6 +183,7 @@ class Dispatcher:
             "session_dispatched",
             number,
             session_id=session["session_id"],
+            session_url=session_url,
             acu_cap=acu_cap,
         )
         await self._github.comment(

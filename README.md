@@ -13,6 +13,21 @@ intentionally frozen mid-SQLAlchemy-2.0 migration, and Dependabot already
 owns the upgrade lane. Convention debt is the category that is verifiable
 with the repo's own tooling, unbounded in supply, and staffed by no one.
 
+## Verified run
+
+The full pipeline has run end-to-end against the real Devin API: six issues
+filed, six sessions dispatched, six PRs opened, zero failures. Each PR stayed
+within the file named in its issue and reports the checks run in-session:
+
+| Issue | PR | Change |
+|---|---|---|
+| #8  | [#19](https://github.com/willhoff2/superset/pull/19) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
+| #9  | [#18](https://github.com/willhoff2/superset/pull/18) | `parseCookie.test.ts` off `describe()` |
+| #10 | [#17](https://github.com/willhoff2/superset/pull/17) | `newQueryTabName.test.ts` off `describe()` |
+| #11 | [#14](https://github.com/willhoff2/superset/pull/14) | `findParentId.test.ts` off `describe()` |
+| #12 | [#15](https://github.com/willhoff2/superset/pull/15) | `home/types.ts`: `Array<any>` -> `string[]` |
+| #13 | [#16](https://github.com/willhoff2/superset/pull/16) | `standardizedFormData.ts`: remove explicit `any` |
+
 ## Architecture
 
 ```
@@ -157,6 +172,10 @@ the OpenAPI spec over-promises) and mimics the verified session lifecycle
 make mock
 ```
 
+Note: only the Devin side is mocked. `make mock` still uses the real
+GitHub API, so it posts comments and labels on the fork's issues (the
+reset script clears them).
+
 (It sets `PR_VERIFY_ENABLED=false` because the mock reports PR URLs that
 don't exist on GitHub; the real pipeline verifies them.)
 
@@ -182,7 +201,8 @@ src/
   scanner.py       # event producer: candidates -> labeled GitHub issues
   dispatcher.py    # issues -> Devin sessions (dedupe, gates, ACU caps)
   monitor.py       # sessions -> outcomes (structured_output, CI retry path)
-  dashboard.py     # HTML status page + /api/state
+  dashboard.py     # status page + /api/state
+  static/          # dashboard assets (html/css/js)
   devin_client.py  # Devin v3 Organization API (thin, typed, backoff)
   github_client.py # GitHub REST (thin, typed, backoff)
   store.py         # SQLite tasks + JSONL events

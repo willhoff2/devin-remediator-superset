@@ -26,8 +26,8 @@ def session_reached_outcome(
 ) -> bool:
     """Whether a session has delivered everything it's going to.
 
-    Verified against the real API (2026-07-12): a session that finishes its
-    task does NOT transition to `exit` — it idles at status=running,
+    Tested against API (2026-07-12): a session that finishes its
+    task does not transition to `exit` — idles at status=running,
     status_detail=waiting_for_user, even if asked to end. So "done" means a
     hard-terminal status, or idling with every required structured-output
     field present. Idling WITHOUT complete output means Devin is blocked on

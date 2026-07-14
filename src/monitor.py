@@ -115,7 +115,12 @@ class Monitor:
             and task["status"] == TaskStatus.DISPATCHED
         ):
             self._store.update_task(number, status=TaskStatus.SESSION_RUNNING)
-            self._store.record_event("session_running", number, session_status=status)
+            self._store.record_event(
+                "session_running",
+                number,
+                session_status=status,
+                session_url=task["session_url"],
+            )
 
     async def _finalize(self, task: dict[str, Any], state: dict[str, Any]) -> None:
         number = task["issue_number"]
