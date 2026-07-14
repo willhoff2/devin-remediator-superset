@@ -7,8 +7,8 @@ Usage:
 
 `smoke` is the go/no-go gate for the whole design: it measures whether Devin
 can run one jest file + pre-commit from the warm machine snapshot in minutes,
-not tens of minutes. If it can't, the per-issue verification story changes
-(see docs/spec.md) — run it before trusting anything downstream.
+not tens of minutes. If it can't, the per-issue verification story has to change; run it before
+trusting anything downstream.
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ async def cmd_smoke(cfg: Config) -> int:
 
         output = state.get("structured_output") or {}
         gate = output.get("jest_passed") is True
-        print(f"\nGATE {'PASSED' if gate else 'FAILED'} — see docs/spec.md prereqs")
+        print(f"\nGATE {'PASSED' if gate else 'FAILED'}")
         return 0 if gate else 1
     finally:
         await devin.aclose()

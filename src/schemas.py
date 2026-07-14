@@ -19,8 +19,8 @@ REMEDIATION_SCHEMA: dict[str, Any] = {
     },
 }
 
-# Smoke session: measures whether the warm snapshot makes per-session
-# verification affordable (see docs/spec.md, "Prereqs").
+# Smoke session: measures whether the machine environment makes per-session
+# verification affordable (jest + pre-commit timings).
 SMOKE_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",

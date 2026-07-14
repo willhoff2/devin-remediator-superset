@@ -1,7 +1,7 @@
 """The event producer: turns remediation candidates into labeled GitHub issues.
 
 Static mode (default) files the verified entries in candidates.yaml —
-deterministic, demo-safe. `--live-scan` is the production seam: it greps a
+deterministic, from a reviewed list. `--live-scan` is the production seam: it greps a
 fresh shallow clone for describe-migration markers, so newly-added debt is
 discovered without anyone curating a list.
 

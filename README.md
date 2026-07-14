@@ -12,7 +12,6 @@ Why this workload and not CVEs or dependency bumps? Superset's pins are
 intentionally frozen mid-SQLAlchemy-2.0 migration, and Dependabot already
 owns the upgrade lane. Convention debt is the category that is verifiable
 with the repo's own tooling, unbounded in supply, and staffed by no one.
-Full decision history in [docs/spec.md](docs/spec.md).
 
 ## Architecture
 
@@ -33,8 +32,7 @@ Full decision history in [docs/spec.md](docs/spec.md).
             └───────────────────────────────────────────────────────────────┘
 ```
 
-- **Trigger**: polling (a sanctioned event type for this workflow: no public
-  endpoint, nothing to break in a demo). `src/sources.py` keeps the
+- **Trigger**: polling. `src/sources.py` keeps the
   `WebhookSource` seam where real-time GitHub webhooks slot in.
 - **At-most-once dispatch**: the SQLite task row (PK = issue number) is
   created *before* the Devin session, so a crash mid-dispatch can strand a
@@ -44,9 +42,10 @@ Full decision history in [docs/spec.md](docs/spec.md).
   merged in the fork), not fork CI, which is disabled on forks and too slow
   to poll live. A flag-gated CI path (`CI_CHECKS_ENABLED`) polls PR check runs and
   retries exactly once via a follow-up session message.
-- **Cost guardrails**: per-session `max_acu_limit` (5 default / 8 for
-  `effort:medium` issues), `MAX_CONCURRENT_SESSIONS` gate, and the dashboard
-  shows ACUs actual-vs-cap per task.
+- **Cost guardrails**: every session carries a hard spend ceiling — $11.25
+  default / $18.00 for `effort:medium` issues (5 / 8 ACUs via
+  `max_acu_limit`) — plus a `MAX_CONCURRENT_SESSIONS` gate; the dashboard
+  shows actual cost vs. cap per task.
 
 ## Quickstart
 
@@ -62,23 +61,24 @@ Prerequisites (one-time, in the Devin console + GitHub):
 Then:
 
 ```bash
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env        # fill in DEVIN_API_KEY, DEVIN_ORG_ID, GITHUB_TOKEN, GITHUB_REPO
 
 # validate credentials + create the playbook (writes DEVIN_PLAYBOOK_ID to use in .env)
-python -m scripts.setup validate
-python -m scripts.setup playbook
+.venv/bin/python -m scripts.setup validate
+.venv/bin/python -m scripts.setup playbook
 
 # go/no-go gate: measures whether Devin can run jest + pre-commit from the
 # warm snapshot in minutes. Run this before trusting anything downstream.
-python -m scripts.setup smoke
+make smoke
 
 # start the runner (dispatcher + monitor + dashboard on :8090)
-docker compose up --build
+make run
 
 # file the remediation issues (the "event" that feeds the pipeline)
-python -m src.scanner              # static verified candidates (demo-safe)
-python -m src.scanner --live-scan  # or: discover by grepping a fresh clone
-python -m src.scanner --dry-run    # print what would be filed
+make scan                                    # pre-verified static candidates
+.venv/bin/python -m src.scanner --live-scan  # or: discover by grepping a fresh clone
+.venv/bin/python -m src.scanner --dry-run    # print what would be filed
 ```
 
 Watch [http://localhost:8090](http://localhost:8090): issues appear, sessions
@@ -86,9 +86,10 @@ dispatch (capped at 3 concurrent), PRs land, the backlog bar moves.
 
 ## Observability — "how would I know this is working?"
 
-- **Dashboard** (`/`): active / succeeded / failed counts, per-task
-  issue → session → PR → duration → ACUs (vs cap), backlog progress
-  (`N / 208` files remediated), live event feed.
+- **Dashboard** (`/`): active / succeeded / failed counts, estimated spend
+  and estimated savings, per-task issue → session → PR → duration →
+  cost vs. cap, backlog progress (`N / 208` files remediated), live event
+  feed.
 - **`/api/state`**: the same as JSON, for anything downstream.
 - **Structured logs**: every state transition is a JSONL event in
   `data/events.jsonl` (and mirrored in SQLite); `LOG_FORMAT=json` for
@@ -96,8 +97,8 @@ dispatch (capped at 3 concurrent), PRs land, the backlog bar moves.
 - **On GitHub**: every issue gets session-start and outcome comments;
   successes are relabeled `remediated-pending-merge` (the runner never closes
   issues; `Fixes #n` in the PR body closes them on merge). Terminal sessions
-  are archived; Devin sessions never exit on their own. The verified
-  lifecycle is documented in [docs/devin-platform.md](docs/devin-platform.md).
+  are archived; Devin sessions never exit on their own (verified against
+  the real API; see `session_reached_outcome` in `src/devin_client.py`).
 
 ## Re-running the demo from scratch
 
@@ -105,9 +106,9 @@ Rehearsal runs accumulate state; `scripts/reset_demo.py` returns everything
 to a fresh start:
 
 ```bash
-python -m scripts.reset_demo        # dry run: prints the full plan
-python -m scripts.reset_demo --yes  # close Devin PRs, delete devin/* branches,
-                                    # DELETE remediation issues, wipe data/
+make reset            # dry run: prints the full plan
+make reset ARGS=--yes # close Devin PRs, delete devin/* branches,
+                      # DELETE remediation issues, wipe data/
 ```
 
 Issues are deleted, not closed, because the scanner dedupes by file path
@@ -132,8 +133,7 @@ Common tasks are wrapped in the Makefile: `make test`, `make lint` (ruff),
 ## Running tests
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m pytest tests/
+make test
 ```
 
 The suite covers the store's idempotency, dispatcher dedupe/concurrency/ACU
@@ -149,13 +149,11 @@ the OpenAPI spec over-promises) and mimics the verified session lifecycle
 (`running/working` → `running/finished`, never `exit`):
 
 ```bash
-.venv/bin/uvicorn scripts.mock_devin:app --port 9095 &
-DEVIN_API_BASE=http://127.0.0.1:9095 PR_VERIFY_ENABLED=false \
-  POLL_INTERVAL_ISSUES=3 POLL_INTERVAL_SESSIONS=1 python -m src.main
+make mock
 ```
 
-(`PR_VERIFY_ENABLED=false` because the mock reports PR URLs that don't
-exist on GitHub; the real pipeline verifies them.)
+(It sets `PR_VERIFY_ENABLED=false` because the mock reports PR URLs that
+don't exist on GitHub; the real pipeline verifies them.)
 
 ## Production hardening (next steps)
 
@@ -191,5 +189,4 @@ scripts/
   session_msg.py   # send a message to a session (debugging)
 playbook.md        # the Devin playbook (procedure, specs, forbidden actions)
 candidates.yaml    # verified remediation candidates (static scanner mode)
-docs/              # working spec + verified Devin platform notes
 ```
