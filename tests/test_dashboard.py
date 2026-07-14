@@ -40,6 +40,7 @@ def test_build_state_summary(seeded_store: Store) -> None:
     summary = dict(state["summary"])
     total_cost = summary.pop("total_cost_usd")
     saved = summary.pop("est_saved_usd")
+    saved_time = summary.pop("saved_time_s")
     assert summary == {
         "active": 1,
         "succeeded": 1,
@@ -55,6 +56,7 @@ def test_build_state_summary(seeded_store: Store) -> None:
     assert saved == round(
         by_issue[1]["duration_s"] / 3600 * DEV_RATE_USD_HOUR - total_cost, 2
     )
+    assert saved_time == by_issue[1]["duration_s"]
     assert by_issue[1]["duration_s"] == 240
     assert by_issue[2]["duration_s"] is not None  # running: duration accrues
     # task 1 has metered ACUs: cost is actual; task 2 estimates from wall time

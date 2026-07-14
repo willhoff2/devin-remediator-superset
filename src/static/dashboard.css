@@ -52,6 +52,8 @@ h1 { font-size: 16px; font-weight: 600; margin: 0; display: flex;
 .card.sel { border-color: var(--accent-deep);
             box-shadow: 0 0 0 1px var(--accent-deep) inset; }
 .card .n { font-family: var(--mono); font-size: 28px; font-weight: 600; }
+.card .n .sub { font-size: 15px; font-weight: 400; color: var(--ink-2);
+                white-space: nowrap; }
 .card .l { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .card .l::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
 .card.active .l::before { background: var(--amber); }

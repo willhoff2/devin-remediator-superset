@@ -69,14 +69,26 @@ for (let i = 0; i < 20; i++) {
 
 const results = [];
 const check = (name, ok) => results.push({ name, result: ok ? "PASS" : "FAIL" });
-const rowCount = () => evaluate(`document.querySelectorAll("#rows tr").length`);
+// The zero-tasks empty state renders a <tr> too — count only real task rows.
+const rowCount = () =>
+  evaluate(`document.querySelectorAll("#rows tr:not(:has(td.empty))").length`);
 const click = (sel) => evaluate(`document.querySelector('${sel}').click()`);
 
-check("initial render has task rows", (await rowCount()) > 0);
 const allRows = await rowCount();
+if (allRows === 0) {
+  console.error("No task data on the page — run against a populated server "
+    + "(e.g. `python -m scripts.preview_dashboard` and pass its URL).");
+  chrome.kill();
+  process.exit(1);
+}
+check("initial render has task rows", allRows > 0);
 
+const succeededRows = await evaluate(
+  `document.querySelectorAll("#rows .badge.succeeded").length`);
 await click('[data-filter="succeeded"]');
-check("succeeded filter keeps succeeded rows", (await rowCount()) === allRows);
+check("succeeded filter shows only the succeeded rows",
+  (await rowCount()) === succeededRows && await evaluate(
+    `document.querySelectorAll("#rows .badge:not(.succeeded)").length`) === 0);
 check("selected card is highlighted",
   await evaluate(`document.querySelector('[data-filter="succeeded"]').classList.contains("sel")`));
 

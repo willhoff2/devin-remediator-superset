@@ -1,4 +1,7 @@
-const fmtDur = s => s == null ? "—" : (s < 90 ? s + "s" : Math.round(s / 60) + "m");
+const fmtDur = s => s == null ? "—"
+  : s < 90 ? s + "s"
+  : s < 5400 ? Math.round(s / 60) + "m"
+  : Math.round(s / 3600) + "h";
 const money = (v, estimated) => (estimated ? "~$" : "$") + v.toFixed(2);
 // Issue titles etc. come from GitHub and are attacker-influenceable.
 const esc = s => String(s).replace(/[&<>"']/g,
@@ -24,9 +27,11 @@ function render() {
     { label: `${summary.cost_estimated ? "Est. cost" : "Cost"} <button class="info"
         data-pop="costPop" aria-expanded="false" aria-label="How cost is estimated">&#9432;</button>`,
       value: money(summary.total_cost_usd, summary.cost_estimated) },
-    { label: `Est. saved <button class="info" data-pop="savedPop"
+    { label: `Est. savings <button class="info" data-pop="savedPop"
         aria-expanded="false" aria-label="How savings are estimated">&#9432;</button>`,
-      value: summary.est_saved_usd > 0 ? money(summary.est_saved_usd, true) : "—" },
+      value: summary.est_saved_usd > 0
+        ? `~$${Math.round(summary.est_saved_usd)}<span class="sub"> / ~${fmtDur(summary.saved_time_s)}</span>`
+        : "—" },
   ];
   document.getElementById("cards").innerHTML = cards.map(({ label, value, key }) => {
     const selected = key !== undefined && key === filter; // money cards have no key

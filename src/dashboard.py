@@ -65,6 +65,7 @@ def build_state(store: Store, cfg: Config) -> dict[str, Any]:
             "failed": sum(1 for t in tasks if t["status"] == TaskStatus.FAILED),
             "total_cost_usd": round(total_cost, 2),
             "est_saved_usd": round(dev_equiv - total_cost, 2),
+            "saved_time_s": sum(t["duration_s"] or 0 for t in succeeded),
             "cost_estimated": any(t["cost_basis"] == "estimated" for t in tasks),
             # The 208-file backlog is describe-migration only; don't count
             # any-cleanup successes against it.
