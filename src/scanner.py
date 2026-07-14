@@ -138,14 +138,19 @@ async def file_issues(
     candidates: list[Candidate],
     github: GitHubClient,
     label: str,
+    done_label: str,
     max_open: int,
     dry_run: bool = False,
 ) -> int:
     """File candidates as issues; dedupe by file path across all past issues."""
+    # Success swaps `label` for `done_label` on the issue, so seeing every
+    # past issue takes both queries. The open cap counts only `label` issues:
+    # remediated-pending-merge ones are no longer dispatcher work.
     existing = await github.list_issues(label, state="all")
+    remediated = await github.list_issues(done_label, state="all")
     known_files = {
         m.group(1)
-        for issue in existing
+        for issue in [*existing, *remediated]
         if (m := _FILE_LINE_RE.search(issue.get("body") or ""))
     }
     open_count = sum(1 for issue in existing if issue["state"] == "open")
@@ -184,7 +189,12 @@ async def amain(args: argparse.Namespace) -> int:
     github = GitHubClient(cfg.github_token, cfg.github_repo)
     try:
         filed = await file_issues(
-            candidates, github, cfg.issue_label, args.max_open, args.dry_run
+            candidates,
+            github,
+            cfg.issue_label,
+            cfg.done_label,
+            args.max_open,
+            args.dry_run,
         )
     finally:
         await github.aclose()

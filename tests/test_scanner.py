@@ -12,12 +12,19 @@ CANDIDATES_YAML = Path(__file__).parent.parent / "candidates.yaml"
 
 
 class FakeGitHub:
-    def __init__(self, existing: list[dict[str, Any]] | None = None) -> None:
-        self.existing = existing or []
+    def __init__(
+        self,
+        existing: list[dict[str, Any]] | None = None,
+        remediated: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self.by_label = {
+            "devin-remediate": existing or [],
+            "remediated-pending-merge": remediated or [],
+        }
         self.created: list[dict[str, Any]] = []
 
     async def list_issues(self, label: str, state: str = "open") -> list[dict[str, Any]]:
-        return self.existing
+        return self.by_label.get(label, [])
 
     async def create_issue(
         self, title: str, body: str, labels: list[str]
@@ -58,7 +65,8 @@ def test_file_issues_dedupes_and_caps() -> None:
     }
     github = FakeGitHub(existing=[already_filed])
     filed = asyncio.run(
-        file_issues(candidates, github, "devin-remediate", max_open=2)  # type: ignore[arg-type]
+        file_issues(candidates, github, "devin-remediate",
+                    "remediated-pending-merge", max_open=2)  # type: ignore[arg-type]
     )
     # f0 deduped; cap of 2 open admits f1 + f2 only
     assert filed == 2
@@ -73,6 +81,23 @@ def test_file_issues_counts_existing_open_toward_cap() -> None:
         Candidate(file="src/b.ts", category="any-cleanup", title="b", change="c"),
     ]
     filed = asyncio.run(
-        file_issues(candidates, github, "devin-remediate", max_open=2)  # type: ignore[arg-type]
+        file_issues(candidates, github, "devin-remediate",
+                    "remediated-pending-merge", max_open=2)  # type: ignore[arg-type]
     )
     assert filed == 1  # one slot already taken by the open issue
+
+
+def test_file_issues_dedupes_remediated_label() -> None:
+    """Success swaps the scan label for the done label; the file must stay
+    deduped or a re-scan would re-file (and re-spend) remediated work."""
+    candidate = Candidate(file="src/f0.test.ts", category="describe-migration",
+                          title="t0", change="c")
+    github = FakeGitHub(
+        remediated=[{"state": "open", "body": build_body(candidate)}]
+    )
+    filed = asyncio.run(
+        file_issues([candidate], github, "devin-remediate",
+                    "remediated-pending-merge", max_open=5)  # type: ignore[arg-type]
+    )
+    assert filed == 0
+    assert github.created == []
