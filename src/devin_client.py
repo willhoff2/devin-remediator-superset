@@ -81,7 +81,15 @@ class DevinClient:
         if structured_output_schema is not None:
             payload["structured_output_schema"] = structured_output_schema
             payload["structured_output_required"] = True
-        return await request_json(self._client, "POST", "/sessions", json=payload)
+        # Retry only 429: a 5xx may follow a successful create, so it raises
+        # and the dispatcher fails the task rather than paying twice.
+        return await request_json(
+            self._client,
+            "POST",
+            "/sessions",
+            json=payload,
+            retry_statuses=frozenset({429}),
+        )
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
         return await request_json(self._client, "GET", f"/sessions/{session_id}")
@@ -121,8 +129,8 @@ class DevinClient:
         )
 
     async def archive_session(self, session_id: str) -> Any:
-        """Archive a session (puts it to sleep if running). Finished sessions
-        never reach `exit` on their own, so this is the lifecycle close-out."""
+        """Archive a session (puts it to sleep if running); the only
+        lifecycle close-out (see session_reached_outcome)."""
         return await request_json(
             self._client, "POST", f"/sessions/{session_id}/archive"
         )

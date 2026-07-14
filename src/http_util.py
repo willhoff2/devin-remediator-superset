@@ -33,10 +33,11 @@ async def request_json(
     json: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
     max_attempts: int = 4,
+    retry_statuses: frozenset[int] = RETRY_STATUSES,
 ) -> Any:
     for attempt in range(1, max_attempts + 1):
         resp = await client.request(method, path, json=json, params=params)
-        if resp.status_code in RETRY_STATUSES and attempt < max_attempts:
+        if resp.status_code in retry_statuses and attempt < max_attempts:
             delay = float(resp.headers.get("Retry-After", 2**attempt))
             log.warning(
                 "http_retry",

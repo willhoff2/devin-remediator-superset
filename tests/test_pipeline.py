@@ -199,9 +199,9 @@ def test_dispatch_rejection_halts_tick(store: Store) -> None:
 
 
 def test_dispatch_transient_frees_row_and_continues(store: Store) -> None:
-    """5xx/429: no session exists — row freed for retry, others continue."""
+    """429: rejected before a session existed — row freed, others continue."""
     cfg = make_config(max_concurrent_sessions=5)
-    devin = ErringDevin(_err(503), fail_first_n=1)
+    devin = ErringDevin(_err(429), fail_first_n=1)
     dispatcher = Dispatcher(
         cfg, store, FakeSource([make_issue(1), make_issue(2)]), FakeGitHub(), devin  # type: ignore[arg-type]
     )
@@ -215,8 +215,24 @@ def test_dispatch_transient_frees_row_and_continues(store: Store) -> None:
     assert store.get_task(1)["status"] == TaskStatus.DISPATCHED
 
 
+def test_dispatch_5xx_is_ambiguous_no_retry(store: Store) -> None:
+    """5xx: task fails with no retry (a session may exist); others continue."""
+    cfg = make_config(max_concurrent_sessions=5)
+    devin = ErringDevin(_err(503), fail_first_n=1)
+    dispatcher = Dispatcher(
+        cfg, store, FakeSource([make_issue(1), make_issue(2)]), FakeGitHub(), devin  # type: ignore[arg-type]
+    )
+    asyncio.run(dispatcher.tick())
+    assert store.get_task(1)["status"] == TaskStatus.FAILED
+    assert store.get_task(2)["status"] == TaskStatus.DISPATCHED
+
+    asyncio.run(dispatcher.tick())
+    # terminal: both issues tracked, no further create attempts
+    assert devin.attempts == 2
+
+
 def test_dispatch_ambiguous_fails_task_but_continues(store: Store) -> None:
-    """Timeout: a session MIGHT exist — never auto-retry, others continue."""
+    """Timeout: same handling as a 5xx."""
     cfg = make_config(max_concurrent_sessions=5)
     devin = ErringDevin(RuntimeError("connect timeout"), fail_first_n=1)
     dispatcher = Dispatcher(
@@ -253,8 +269,7 @@ def test_monitor_success_path(store: Store) -> None:
     asyncio.run(monitor.tick())
     assert store.get_task(1)["status"] == TaskStatus.SESSION_RUNNING
 
-    # verified real-API terminal shape: finished sessions never reach
-    # status=exit — they idle at running/waiting_for_user with output complete
+    # real terminal shape: idle + complete output (see session_reached_outcome)
     devin.session_states["dv-1"] = {
         "status": "running",
         "status_detail": "waiting_for_user",

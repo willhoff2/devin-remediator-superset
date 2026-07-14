@@ -106,8 +106,7 @@ class Dispatcher:
             if effort == "medium"
             else self._cfg.max_acu_default
         )
-        # Create the task row BEFORE the session: a crash between the two
-        # leaves a dispatchable-looking row but never a duplicate session.
+        # Row first: a crash here strands a row, never a duplicate session.
         if not self._store.create_task(
             number, issue["html_url"], title, category, acu_cap
         ):
@@ -137,13 +136,25 @@ class Dispatcher:
                 # verified 2026-07-13); do not pass it.
             )
         except APIError as exc:
-            if exc.status == 429 or exc.status >= 500:
-                # Transient, and a non-2xx status proves no session was
-                # created: free the row so the next tick retries; other
-                # issues may still dispatch fine.
+            if exc.status == 429:
+                # 429 means no session was created; free the row and let
+                # the next tick retry.
                 self._store.delete_task(number)
                 self._store.record_event(
                     "session_create_transient", number, error=str(exc)
+                )
+                return True
+            if exc.status >= 500:
+                # A session may exist behind a 5xx; never retry a
+                # possibly-paid call.
+                self._store.update_task(
+                    number,
+                    status=TaskStatus.FAILED,
+                    summary=f"session creation ambiguous: {exc}",
+                    completed_at=time.time(),
+                )
+                self._store.record_event(
+                    "session_create_failed", number, error=str(exc)
                 )
                 return True
             # Definitive rejection (payload/auth/quota): mark failed and
@@ -160,9 +171,7 @@ class Dispatcher:
             )
             return False
         except Exception as exc:  # noqa: BLE001, timeout/connection error
-            # Ambiguous: the request may have reached Devin, so a session
-            # MIGHT exist. Never auto-retry (double-spend risk); the task
-            # stays failed for human triage on the dashboard.
+            # Same ambiguity as a 5xx: a session may exist, so no auto-retry.
             self._store.update_task(
                 number,
                 status=TaskStatus.FAILED,
