@@ -104,7 +104,8 @@ a:hover { text-decoration: underline; }
            letter-spacing: normal; font-weight: 400;
            box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
 
-details.activity summary { cursor: pointer; user-select: none;
+details.activity summary { cursor: pointer;
+                           -webkit-user-select: none; user-select: none;
                            list-style: none; display: flex;
                            align-items: center; gap: 8px;
                            margin: 26px 0 10px; }
