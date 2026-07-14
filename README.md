@@ -130,6 +130,11 @@ Common tasks are wrapped in the Makefile: `make test`, `make lint` (ruff),
 `make run` (docker compose), `make mock` (rehearsal against the local mock),
 `make scan`, `make smoke`, `make reset`.
 
+The dashboard's interactive behavior (card filters, popovers, collapse) is
+outside pytest's reach; `node scripts/verify_dashboard_ui.mjs` drives it in
+headless Chrome against a running server and exits non-zero on any failed
+check (`CHROME_BIN` overrides the browser path off macOS).
+
 ## Running tests
 
 ```bash
@@ -187,6 +192,7 @@ scripts/
   reset_demo.py    # return fork + local state to a fresh start
   session_dump.py  # dump a session's full JSON (debugging)
   session_msg.py   # send a message to a session (debugging)
+  verify_dashboard_ui.mjs  # headless-Chrome check of dashboard interactions
 playbook.md        # the Devin playbook (procedure, specs, forbidden actions)
 candidates.yaml    # verified remediation candidates (static scanner mode)
 ```
