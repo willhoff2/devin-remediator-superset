@@ -32,7 +32,7 @@ import httpx
 from dotenv import load_dotenv
 
 from src.config import Config
-from src.http_util import request_json
+from src.http_util import APIError, request_json
 
 # The fork was verified current at this SHA (docs: spec.md "Fork drift");
 # candidates.yaml line references assume it. Do not sync/merge past it
@@ -102,9 +102,13 @@ class ResetClient:
         )
 
     async def delete_branch(self, ref: str) -> None:
-        await request_json(
-            self._client, "DELETE", f"/repos/{self.repo}/git/refs/heads/{ref}"
-        )
+        try:
+            await request_json(
+                self._client, "DELETE", f"/repos/{self.repo}/git/refs/heads/{ref}"
+            )
+        except APIError as exc:
+            if exc.status not in (404, 422):  # already gone is fine
+                raise
 
     async def master_sha(self) -> str:
         branch = await request_json(
@@ -131,12 +135,17 @@ async def run(apply: bool) -> int:
             action = "close+delete-branch" if pr["state"] == "open" else "delete-branch"
             print(f"PR #{pr['number']} ({pr['state']}) {branch}: {action}")
             if apply:
-                if pr["state"] == "open":
-                    await gh.close_pr(pr["number"])
                 try:
+                    if pr["state"] == "open":
+                        await gh.close_pr(pr["number"])
                     await gh.delete_branch(branch)
-                except Exception as exc:  # noqa: BLE001, branch may be gone already
-                    print(f"  [warn] branch delete failed: {exc}")
+                except Exception as exc:  # noqa: BLE001, report every failure in one pass
+                    problems += 1
+                    print(
+                        f"  [FAIL] {exc}\n"
+                        "  (closing PRs needs 'Pull requests: write' and branch"
+                        " deletion needs 'Contents: write' on the PAT)"
+                    )
 
         # 2. Issues: deletion, because closed issues still block the
         #    scanner's file-path dedupe (it scans state="all")

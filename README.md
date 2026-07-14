@@ -71,7 +71,9 @@ Prerequisites (one-time, in the Devin console + GitHub):
 2. The **Devin GitHub App** installed with access to your target fork, and
    the repo's machine setup/onboarding completed (a warm snapshot with
    `node_modules` is what keeps per-session cost sane on a repo this size).
-3. A GitHub **PAT** with issues read/write + PR read on the fork.
+3. A GitHub **PAT** on the fork: issues read/write + PR read for the
+   pipeline; add PR write + contents write if you want `make reset`
+   (closing PRs, deleting branches) to work with the same token.
 
 Then:
 
