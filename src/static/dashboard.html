@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Devin Remediator</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Devin Remediator <span class="repo" id="repo"></span></h1>
+  <div class="meta"><span class="live"><i></i>live</span><span id="updated"></span></div>
+</header>
+<section class="hero">
+  <div class="hero-top">
+    <span class="label">Backlog burndown — describe-migration files</span>
+    <span class="hero-num"><span id="backlog-done">—</span><span class="of"> / <span
+      id="backlog-total">—</span></span> <small id="backlog-pct"></small>
+      <small class="extra" id="backlog-extra"></small></span>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+</section>
+<div class="cards" id="cards"></div>
+<div class="label sec">Tasks</div>
+<div class="panel">
+  <table>
+    <thead><tr>
+      <th class="title">Issue</th><th>Category</th><th>Status</th>
+      <th>Session</th><th>PR</th><th id="cihead" hidden>CI</th>
+      <th class="num">Duration</th><th class="num">Cost</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<details class="activity" open>
+  <summary><span class="label">Activity</span></summary>
+  <div class="panel"><div id="events"></div></div>
+</details>
+<div id="costPop" class="pop" hidden>Values are estimated from session wall
+time at 1 ACU per 15 min of work. Metered orgs get exact figures from the
+consumption API.</div>
+<div id="savedPop" class="pop" hidden>Estimated savings = (wall time of
+successful tasks &times; $64/hr, the <a
+href="https://www.bls.gov/ooh/computer-and-information-technology/software-developers.htm"
+target="_blank" rel="noopener">BLS median US software-developer wage</a>)
+&minus; (everything spent on Devin, failures included). Minute to minute
+comparison as a deliberate floor.</div>
+</div>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>
