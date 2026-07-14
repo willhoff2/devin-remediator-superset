@@ -202,8 +202,8 @@ class Monitor:
         self, task: dict[str, Any], pr_url: str | None, succeeded: bool
     ) -> None:
         """Terminal lifecycle: optional native Devin review of the PR (success
-        only), then archive the session, since finished sessions idle forever
-        otherwise. Best-effort: the task outcome is already recorded, so
+        only), then archive the session (sessions never exit on their own).
+        Best-effort: the task outcome is already recorded, so
         failures here are logged, not propagated. Archiving is skipped when
         the CI retry path is on, which needs the session responsive to
         follow-up messages."""
@@ -262,8 +262,8 @@ class Monitor:
             self._store.record_event("ci_red_final", number, failed=failed)
             await self._archive_session(task)
             return
-        # NOTE: messaging an exited session relies on Devin resuming it; if
-        # the API refuses, we mark the task failed rather than looping.
+        # If the API refuses to deliver to the idle session, fail the task
+        # rather than loop.
         try:
             await self._devin.send_message(
                 task["session_id"],

@@ -8,50 +8,58 @@ docs mandate a `describe()`→`test()` test migration (**208 files** carry the
 TODO marker) plus `any`-type cleanup. It launches one budget-capped Devin
 session per issue and reports outcomes on a status dashboard.
 
-Why this workload and not CVEs or dependency bumps? Superset's pins are
-intentionally frozen mid-SQLAlchemy-2.0 migration, and Dependabot already
-owns the upgrade lane. Convention debt is the category that is verifiable
-with the repo's own tooling, unbounded in supply, and staffed by no one.
-
-## Verified run
-
-The full pipeline has run end-to-end against the real Devin API: six issues
-filed, six sessions dispatched, six PRs opened, zero failures. Each PR stayed
-within the file named in its issue and reports the checks run in-session:
-
-| Issue | PR | Change |
-|---|---|---|
-| #8  | [#19](https://github.com/willhoff2/superset/pull/19) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
-| #9  | [#18](https://github.com/willhoff2/superset/pull/18) | `parseCookie.test.ts` off `describe()` |
-| #10 | [#17](https://github.com/willhoff2/superset/pull/17) | `newQueryTabName.test.ts` off `describe()` |
-| #11 | [#14](https://github.com/willhoff2/superset/pull/14) | `findParentId.test.ts` off `describe()` |
-| #12 | [#15](https://github.com/willhoff2/superset/pull/15) | `home/types.ts`: `Array<any>` -> `string[]` |
-| #13 | [#16](https://github.com/willhoff2/superset/pull/16) | `standardizedFormData.ts`: remove explicit `any` |
+Superset's pins are intentionally frozen mid-SQLAlchemy-2.0 migration.
+Dependabot already owns the upgrade lane, so CVEs were skipped. Convention
+debt is the category that is verifiable with the repo's own tooling and
+unbounded in supply.
 
 ## Architecture
 
 ```
-            ┌────────────────────── runner container ──────────────────────┐
-            │                                                               │
- candidates │  Scanner ──files──► GitHub Issues (label: devin-remediate)    │
- .yaml or   │                          │                                    │
- --live-scan│  Dispatcher ◄──polls─────┘                                    │
-            │      │  dedupe (SQLite PK) · concurrency gate · ACU cap       │
-            │      └─────creates──► Devin session (playbook, tags,          │
-            │                       structured_output_schema)               │
-            │  Monitor ──polls sessions──► terminal state                   │
-            │      │  structured_output = success signal                    │
-            │      └── comments outcome on issue · relabels                 │
-            │  Dashboard ── / (HTML) · /api/state (JSON)                    │
-            │  State: SQLite tasks + JSONL event log                        │
-            └───────────────────────────────────────────────────────────────┘
+  candidates.yaml (verified static)  or  --live-scan (shallow clone + grep)
+                          │
+                   ┌──────▼──────┐
+                   │   Scanner   │  CLI, run on demand or scheduled ·
+                   └──────┬──────┘  dedupes by file path · caps open issues
+                          │
+            [ GitHub Issues · label: devin-remediate ]
+                          │
+                          │  polls for the label
+                   ┌──────▼──────┐
+                   │ Dispatcher  │  at-most-once (SQLite row before session)
+                   └──────┬──────┘  concurrency gate (3) · ACU cap (5 / 8)
+                          │
+                          │  creates: playbook · tags ·
+                          │  structured-output schema · max_acu_limit
+                          │
+            [ Devin session · Devin's cloud, warm repo snapshot ]
+              makes the change · verifies (jest + pre-commit)
+                    before pushing · opens the PR
+                          │
+                          │  polls to terminal state
+                   ┌──────▼──────┐
+                   │   Monitor   │  success = structured_output.success
+                   └──────┬──────┘  and the PR exists on the fork
+                          │
+                          │  comments outcome on issue · relabels ·
+                          │  archives session
+                          │
+            [ Pull Request · "Fixes #n" closes the issue on merge ]
+
+  every state transition ──►  SQLite tasks + JSONL event log
+  Dashboard reads it ───────►  / (HTML) · /api/state (JSON)
 ```
+
+Dispatcher, Monitor, and Dashboard run as asyncio tasks in one container
+process. The Scanner is a separate CLI (`make scan`) to identify and create issues for Devin.
 
 - **Trigger**: polling. `src/sources.py` keeps the
   `WebhookSource` seam where real-time GitHub webhooks slot in.
 - **At-most-once dispatch**: the SQLite task row (PK = issue number) is
   created *before* the Devin session, so a crash mid-dispatch can strand a
   row (cleared by `scripts/reset_demo.py`) but never double-spend an issue.
+  Session creation retries only 429 (no session existed) instead of
+  risking a duplicate.
 - **Success signal**: Devin's `structured_output` (schema-enforced) + PR
   existence (the reported PR is fetched from GitHub and must be open or
   merged in the fork), not fork CI, which is disabled on forks and too slow
@@ -100,6 +108,21 @@ make scan                                    # pre-verified static candidates
 
 Watch [http://localhost:8090](http://localhost:8090): issues appear, sessions
 dispatch (capped at 3 concurrent), PRs land, the backlog bar moves.
+
+## Verified run
+
+The full pipeline has run end-to-end against the real Devin API: six issues
+filed, six sessions dispatched, six PRs opened, zero failures. Each PR stayed
+within the file named in its issue and reports the checks run in-session:
+
+| Issue | PR | Change |
+|---|---|---|
+| #8  | [#19](https://github.com/willhoff2/superset/pull/19) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
+| #9  | [#18](https://github.com/willhoff2/superset/pull/18) | `parseCookie.test.ts` off `describe()` |
+| #10 | [#17](https://github.com/willhoff2/superset/pull/17) | `newQueryTabName.test.ts` off `describe()` |
+| #11 | [#14](https://github.com/willhoff2/superset/pull/14) | `findParentId.test.ts` off `describe()` |
+| #12 | [#15](https://github.com/willhoff2/superset/pull/15) | `home/types.ts`: `Array<any>` -> `string[]` |
+| #13 | [#16](https://github.com/willhoff2/superset/pull/16) | `standardizedFormData.ts`: remove explicit `any` |
 
 ## Observability — "how would I know this is working?"
 
@@ -183,6 +206,8 @@ don't exist on GitHub; the real pipeline verifies them.)
 
 ## Production hardening (next steps)
 
+- **Your infrastructure**: one outbound-only container, two secrets;
+  harden with Postgres, a secret manager, and a GitHub App token.
 - **WebhookSource**: real-time dispatch from GitHub `issues` webhooks
   (HMAC-verified) instead of polling; the seam already exists.
 - **Independent review loop**: Devin's native PR-review API
@@ -192,6 +217,11 @@ don't exist on GitHub; the real pipeline verifies them.)
 - **Devin Schedules** for periodic `--live-scan` sweeps; native Jira/Linear
   triggers where tickets originate outside GitHub.
 - **Enterprise consumption API** for org-level ACU/cost dashboards.
+- **Failure alerting**: Slack webhook or equivalent on `task_failed`
+  events to notify the team.
+- **Reconcile-by-tag**: recover ambiguous session creates via their
+  `gh-issue-N` tag; the tag filter is already verified against the real
+  API (`scripts/probe_tag_filter.py`).
 
 ## Repo layout
 

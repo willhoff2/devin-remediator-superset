@@ -4,7 +4,7 @@ A rehearsal run accumulates state in three places; this script clears the
 first two and verifies the third:
 
 1. GitHub fork: remediation issues (deleted, not closed: the scanner dedupes
-   by file path across issues in ALL states, so closed issues would block
+   by file path across issues in all states, so closed issues would block
    re-filing forever), Devin's PRs (closed), and devin/* branches (deleted).
 2. Local runner state: data/state.db + data/events.jsonl.
 3. Fork master: verified against the frozen SHA. Never auto-reset: if a
@@ -159,10 +159,8 @@ async def run(apply: bool) -> int:
                     problems += 1
                     print(
                         f"  [FAIL] {exc}\n"
-                        "  (deleteIssue is verified to work with the runner's"
-                        " fine-grained PAT when its owner is the repo admin;"
-                        " if this fails, fall back to bumping ISSUE_LABEL/"
-                        "DONE_LABEL, see README)"
+                        "  (needs a PAT whose owner is a repo admin;"
+                        " fallback: bump ISSUE_LABEL/DONE_LABEL, see README)"
                     )
 
         # 3. Local state

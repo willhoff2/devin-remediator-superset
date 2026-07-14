@@ -6,7 +6,7 @@ Two jobs:
    payload drift is caught here, not in Cognition's API logs. (The OpenAPI
    spec over-promises: `resumable` is documented yet 400s in reality, so the
    allowlist is built from keys proven accepted by real successful calls.)
-2. Mimic the VERIFIED session lifecycle — sessions never reach status=exit;
+2. Mimic the verified session lifecycle — sessions never reach status=exit;
    they go running/working -> running/finished with structured_output set,
    and archive flips them to suspended.
 
