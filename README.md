@@ -101,9 +101,16 @@ make smoke
 make run
 
 # file the remediation issues (the "event" that feeds the pipeline)
-make scan                                    # pre-verified static candidates
-.venv/bin/python -m src.scanner --live-scan  # or: discover by grepping a fresh clone
-.venv/bin/python -m src.scanner --dry-run    # print what would be filed
+# Three options for running the scanner:
+
+# A) pre-verified static candidates
+make scan
+
+# B) discover by grepping a fresh clone (seam only)
+.venv/bin/python -m src.scanner --live-scan  
+
+# C) print what would be filed, files nothing
+.venv/bin/python -m src.scanner --dry-run    
 ```
 
 Watch [http://localhost:8090](http://localhost:8090): issues appear, sessions
