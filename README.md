@@ -117,12 +117,12 @@ within the file named in its issue and reports the checks run in-session:
 
 | Issue | PR                                                  | Change                                                    |
 | ----- | --------------------------------------------------- | --------------------------------------------------------- |
-| #8    | [#19](https://github.com/willhoff2/superset/pull/19) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
-| #9    | [#18](https://github.com/willhoff2/superset/pull/18) | `parseCookie.test.ts` off `describe()`                |
-| #10   | [#17](https://github.com/willhoff2/superset/pull/17) | `newQueryTabName.test.ts` off `describe()`            |
-| #11   | [#14](https://github.com/willhoff2/superset/pull/14) | `findParentId.test.ts` off `describe()`               |
-| #12   | [#15](https://github.com/willhoff2/superset/pull/15) | `home/types.ts`: `Array<any>` -> `string[]`         |
-| #13   | [#16](https://github.com/willhoff2/superset/pull/16) | `standardizedFormData.ts`: remove explicit `any`      |
+| #86   | [#97](https://github.com/willhoff2/superset/pull/97) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
+| #87   | [#95](https://github.com/willhoff2/superset/pull/95) | `parseCookie.test.ts` off `describe()`                |
+| #88   | [#94](https://github.com/willhoff2/superset/pull/94) | `newQueryTabName.test.ts` off `describe()`            |
+| #89   | [#92](https://github.com/willhoff2/superset/pull/92) | `findParentId.test.ts` off `describe()`               |
+| #90   | [#93](https://github.com/willhoff2/superset/pull/93) | `home/types.ts`: `Array<any>` -> `string[]`         |
+| #91   | [#96](https://github.com/willhoff2/superset/pull/96) | `standardizedFormData.ts`: remove explicit `any`      |
 
 ## Observability — "how would I know this is working?"
 
