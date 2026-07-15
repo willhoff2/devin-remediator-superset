@@ -35,8 +35,8 @@ class FakeGitHub:
 
 def test_load_static_candidates() -> None:
     candidates = load_static(CANDIDATES_YAML)
-    assert len(candidates) == 6
-    assert sum(1 for c in candidates if c.category == "describe-migration") == 4
+    assert len(candidates) == 9
+    assert sum(1 for c in candidates if c.category == "describe-migration") == 7
     medium = [c for c in candidates if c.effort == "medium"]
     assert [c.file.rsplit("/", 1)[-1] for c in medium] == ["standardizedFormData.ts"]
     assert all(c.title and c.change for c in candidates)

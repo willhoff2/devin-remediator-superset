@@ -42,3 +42,33 @@ candidates:
       If some casts are genuinely forced by upstream signatures, narrow what
       you can and report the remainder honestly via structured output —
       do NOT widen scope into other files to make types fit.
+# Three held-out demo candidates — verified against willhoff2/superset
+# @ 2a18a556b0 on 2026-07-14 (file exists, marker + disable comment present,
+# single describe() block, pure-ts utility tests, 29-44 lines each).
+#
+# On the recording machine, AFTER the 6-issue pre-run completes:
+#
+#   1. Append this file to the solution repo's candidates.yaml:
+#        cat demo-candidates.yaml >> candidates.yaml
+#      (entries are indented to match; these comment lines are YAML-legal)
+#   2. Update tests/test_scanner.py::test_load_static_candidates:
+#        len(candidates) == 6  ->  == 9
+#        describe-migration count == 4  ->  == 7
+#      Run make test.
+#   3. Commit (suggested: "feat(scanner): three more verified candidates").
+#   4. Do NOT run `make scan` again until the camera is rolling — the six
+#      filed issues hold these three back via dedupe, so the on-camera
+#      `make scan` files exactly these three and the dispatcher takes all
+#      three at once (concurrency gate visibly full at 3).
+
+  - file: superset-frontend/src/dashboard/util/getChartAndLabelComponentIdFromPath.test.ts
+    category: describe-migration
+    title: "test(dashboard): migrate getChartAndLabelComponentIdFromPath.test.ts off describe() block"
+
+  - file: superset-frontend/src/utils/localStorageHelpers.test.ts
+    category: describe-migration
+    title: "test(utils): migrate localStorageHelpers.test.ts off describe() block"
+
+  - file: superset-frontend/src/dashboard/util/isDashboardEmpty.test.ts
+    category: describe-migration
+    title: "test(dashboard): migrate isDashboardEmpty.test.ts off describe() block"

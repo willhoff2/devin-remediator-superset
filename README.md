@@ -115,14 +115,14 @@ The full pipeline has run end-to-end against the real Devin API: six issues
 filed, six sessions dispatched, six PRs opened, zero failures. Each PR stayed
 within the file named in its issue and reports the checks run in-session:
 
-| Issue | PR | Change |
-|---|---|---|
-| #8  | [#19](https://github.com/willhoff2/superset/pull/19) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
-| #9  | [#18](https://github.com/willhoff2/superset/pull/18) | `parseCookie.test.ts` off `describe()` |
-| #10 | [#17](https://github.com/willhoff2/superset/pull/17) | `newQueryTabName.test.ts` off `describe()` |
-| #11 | [#14](https://github.com/willhoff2/superset/pull/14) | `findParentId.test.ts` off `describe()` |
-| #12 | [#15](https://github.com/willhoff2/superset/pull/15) | `home/types.ts`: `Array<any>` -> `string[]` |
-| #13 | [#16](https://github.com/willhoff2/superset/pull/16) | `standardizedFormData.ts`: remove explicit `any` |
+| Issue | PR                                                  | Change                                                    |
+| ----- | --------------------------------------------------- | --------------------------------------------------------- |
+| #8    | [#19](https://github.com/willhoff2/superset/pull/19) | `getLeafComponentIdFromPath.test.ts` off `describe()` |
+| #9    | [#18](https://github.com/willhoff2/superset/pull/18) | `parseCookie.test.ts` off `describe()`                |
+| #10   | [#17](https://github.com/willhoff2/superset/pull/17) | `newQueryTabName.test.ts` off `describe()`            |
+| #11   | [#14](https://github.com/willhoff2/superset/pull/14) | `findParentId.test.ts` off `describe()`               |
+| #12   | [#15](https://github.com/willhoff2/superset/pull/15) | `home/types.ts`: `Array<any>` -> `string[]`         |
+| #13   | [#16](https://github.com/willhoff2/superset/pull/16) | `standardizedFormData.ts`: remove explicit `any`      |
 
 ## Observability — "how would I know this is working?"
 
